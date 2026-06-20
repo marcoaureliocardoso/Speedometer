@@ -38,4 +38,31 @@ void main() {
     expect(engine.process(speedKmh: 42, isValid: false, roadSpeedLimit: 40),
         isNull);
   });
+
+  test('confirma faixa de 5 km/h em aceleração', () {
+    final engine = SpeedAlertEngine();
+    engine.process(speedKmh: 14.9, isValid: true, roadSpeedLimit: null);
+    expect(engine.process(speedKmh: 15.1, isValid: true, roadSpeedLimit: null),
+        isNull);
+    expect(
+        engine
+            .process(speedKmh: 15.2, isValid: true, roadSpeedLimit: null)
+            ?.message,
+        '15 quilômetros por hora.');
+  });
+
+  test('rearma excesso somente após retornar abaixo da margem', () {
+    final engine = SpeedAlertEngine();
+    engine.process(speedKmh: 40, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 41, isValid: true, roadSpeedLimit: 40);
+    expect(
+        engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40)?.kind,
+        VoiceAlertKind.aboveLimit);
+    engine.process(speedKmh: 38, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 37, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 41, isValid: true, roadSpeedLimit: 40);
+    expect(
+        engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40)?.kind,
+        VoiceAlertKind.aboveLimit);
+  });
 }

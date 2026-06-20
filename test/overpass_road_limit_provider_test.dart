@@ -14,6 +14,8 @@ void main() {
       expect(OverpassRoadLimitProvider.parseMaxSpeed('80 @ (22:00-06:00)'),
           isNull);
       expect(OverpassRoadLimitProvider.parseMaxSpeed('50;80'), isNull);
+      expect(OverpassRoadLimitProvider.parseMaxSpeed('BR:urban'), isNull);
+      expect(OverpassRoadLimitProvider.parseMaxSpeed(null), isNull);
     });
   });
 }
