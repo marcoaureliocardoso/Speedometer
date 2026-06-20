@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/telemetry_controller.dart';
 import 'offline_regions_page.dart';
 import 'settings_page.dart';
 import '../widgets/speedometer_gauge.dart';
@@ -12,9 +13,29 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  bool _isTracking = false;
+  final _telemetry = TelemetryController();
   String _dataMode = 'Somente offline';
   VoiceSettings _voiceSettings = const VoiceSettings();
+
+  bool get _isTracking => _telemetry.isTracking;
+
+  @override
+  void initState() {
+    super.initState();
+    _telemetry.addListener(_onTelemetryChanged);
+  }
+
+  void _onTelemetryChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _telemetry
+      ..removeListener(_onTelemetryChanged)
+      ..dispose();
+    super.dispose();
+  }
 
   Future<void> _startTracking() async {
     final selectedMode = await showModalBottomSheet<String>(
@@ -25,15 +46,17 @@ class _DashboardPageState extends State<DashboardPage> {
     );
 
     if (selectedMode != null && mounted) {
-      setState(() {
-        _dataMode = selectedMode;
-        _isTracking = true;
-      });
+      setState(() => _dataMode = selectedMode);
+      await _telemetry.start(
+        allowOnline: selectedMode == 'Online e offline',
+        announceLimits: _voiceSettings.mode != VoiceMode.silent,
+        announceBands: _voiceSettings.mode == VoiceMode.limitsAndBands,
+      );
     }
   }
 
-  void _stopTracking() {
-    setState(() => _isTracking = false);
+  Future<void> _stopTracking() async {
+    await _telemetry.stop();
   }
 
   void _showInformation() {
@@ -96,8 +119,16 @@ class _DashboardPageState extends State<DashboardPage> {
                   const SizedBox(height: 8),
                   Expanded(
                     child: isLandscape
-                        ? _LandscapeDashboard(isTracking: _isTracking)
-                        : _PortraitDashboard(isTracking: _isTracking),
+                        ? _LandscapeDashboard(
+                            isTracking: _isTracking,
+                            speedKmh: _telemetry.speedKmh,
+                            roadSpeedLimit: _telemetry.roadSpeedLimit,
+                          )
+                        : _PortraitDashboard(
+                            isTracking: _isTracking,
+                            speedKmh: _telemetry.speedKmh,
+                            roadSpeedLimit: _telemetry.roadSpeedLimit,
+                          ),
                   ),
                   const SizedBox(height: 16),
                   Semantics(
@@ -187,20 +218,26 @@ class _DashboardHeader extends StatelessWidget {
 }
 
 class _PortraitDashboard extends StatelessWidget {
-  const _PortraitDashboard({required this.isTracking});
+  const _PortraitDashboard(
+      {required this.isTracking,
+      required this.speedKmh,
+      required this.roadSpeedLimit});
 
   final bool isTracking;
+  final double? speedKmh;
+  final int? roadSpeedLimit;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       child: Column(
         children: [
-          _SpeedReadout(isTracking: isTracking),
+          _SpeedReadout(isTracking: isTracking, speedKmh: speedKmh),
           const SizedBox(height: 16),
-          const SpeedometerGauge(speed: null, roadSpeedLimit: null),
+          SpeedometerGauge(
+              speed: speedKmh, roadSpeedLimit: roadSpeedLimit?.toDouble()),
           const SizedBox(height: 16),
-          _LimitStatus(isTracking: isTracking),
+          _LimitStatus(isTracking: isTracking, roadSpeedLimit: roadSpeedLimit),
           const SizedBox(height: 16),
           const _LegalNotice(),
         ],
@@ -210,9 +247,14 @@ class _PortraitDashboard extends StatelessWidget {
 }
 
 class _LandscapeDashboard extends StatelessWidget {
-  const _LandscapeDashboard({required this.isTracking});
+  const _LandscapeDashboard(
+      {required this.isTracking,
+      required this.speedKmh,
+      required this.roadSpeedLimit});
 
   final bool isTracking;
+  final double? speedKmh;
+  final int? roadSpeedLimit;
 
   @override
   Widget build(BuildContext context) {
@@ -221,10 +263,12 @@ class _LandscapeDashboard extends StatelessWidget {
         Expanded(
           child: Column(
             children: [
-              _SpeedReadout(isTracking: isTracking),
-              const Expanded(
+              _SpeedReadout(isTracking: isTracking, speedKmh: speedKmh),
+              Expanded(
                 child: Center(
-                  child: SpeedometerGauge(speed: null, roadSpeedLimit: null),
+                  child: SpeedometerGauge(
+                      speed: speedKmh,
+                      roadSpeedLimit: roadSpeedLimit?.toDouble()),
                 ),
               ),
             ],
@@ -236,7 +280,8 @@ class _LandscapeDashboard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _LimitStatus(isTracking: isTracking),
+                _LimitStatus(
+                    isTracking: isTracking, roadSpeedLimit: roadSpeedLimit),
                 const SizedBox(height: 16),
                 const _LegalNotice(),
               ],
@@ -249,16 +294,19 @@ class _LandscapeDashboard extends StatelessWidget {
 }
 
 class _SpeedReadout extends StatelessWidget {
-  const _SpeedReadout({required this.isTracking});
+  const _SpeedReadout({required this.isTracking, required this.speedKmh});
 
   final bool isTracking;
+  final double? speedKmh;
 
   @override
   Widget build(BuildContext context) {
-    final speed = isTracking ? '—' : '0';
-    final label = isTracking
-        ? 'Aguardando uma posição válida do GPS'
-        : 'Velocidade atual: 0 quilômetros por hora';
+    final speed = speedKmh?.round().toString() ?? (isTracking ? '—' : '0');
+    final label = speedKmh == null
+        ? (isTracking
+            ? 'Aguardando uma posição válida do GPS'
+            : 'Velocidade atual: 0 quilômetros por hora')
+        : 'Velocidade atual: $speed quilômetros por hora';
     return Semantics(
       label: label,
       child: ExcludeSemantics(
@@ -282,17 +330,21 @@ class _SpeedReadout extends StatelessWidget {
 }
 
 class _LimitStatus extends StatelessWidget {
-  const _LimitStatus({required this.isTracking});
+  const _LimitStatus({required this.isTracking, required this.roadSpeedLimit});
 
   final bool isTracking;
+  final int? roadSpeedLimit;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final limit = roadSpeedLimit;
     return Semantics(
-      label: isTracking
-          ? 'Limite indisponível. Aguardando uma posição válida.'
-          : 'Limite indisponível.',
+      label: limit != null
+          ? 'Limite: $limit quilômetros por hora.'
+          : isTracking
+              ? 'Limite indisponível. Aguardando uma posição válida.'
+              : 'Limite indisponível.',
       child: ExcludeSemantics(
         child: Card(
           child: Padding(
@@ -305,13 +357,18 @@ class _LimitStatus extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Limite indisponível',
+                      Text(
+                          limit != null
+                              ? 'Limite: $limit km/h'
+                              : 'Limite indisponível',
                           style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 4),
                       Text(
-                        isTracking
-                            ? 'Aguardando GPS e confirmação da via.'
-                            : 'Inicie o rastreamento para consultar o limite da via.',
+                        limit != null
+                            ? 'OSM online · Sinalização oficial prevalece.'
+                            : isTracking
+                                ? 'Aguardando GPS e confirmação da via.'
+                                : 'Inicie o rastreamento para consultar o limite da via.',
                       ),
                     ],
                   ),

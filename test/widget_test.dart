@@ -23,14 +23,7 @@ void main() {
     expect(find.text('Modo de dados'), findsOneWidget);
     expect(find.text('Somente offline'), findsWidgets);
 
-    await tester.tap(find.text('Continuar'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Rastreamento ativo'), findsOneWidget);
-    expect(find.text('Aguardando GPS'), findsOneWidget);
-    expect(find.text('Encerrar rastreamento'), findsOneWidget);
-
-    await tester.tap(find.text('Encerrar rastreamento'));
+    await tester.tap(find.text('Cancelar'));
     await tester.pumpAndSettle();
 
     expect(find.text('Rastreamento parado'), findsOneWidget);

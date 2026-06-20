@@ -1,0 +1,138 @@
+import '../entities/voice_alert.dart';
+
+/// Produz alertas confirmados por duas leituras válidas consecutivas.
+/// A camada de apresentação decide se TTS está habilitado para o modo de voz.
+class SpeedAlertEngine {
+  double? _lastSpeed;
+  _PendingAlert? _pending;
+  bool _belowHalfArmed = true;
+  bool _aboveLimitArmed = true;
+  final Map<int, bool> _ascendingBandArmed = {};
+  final Map<int, bool> _descendingBandArmed = {};
+
+  VoiceAlert? process({
+    required double speedKmh,
+    required bool isValid,
+    required double? roadSpeedLimit,
+  }) {
+    if (!isValid || speedKmh.isNegative) return null;
+
+    _rearmRelativeAlerts(speedKmh, roadSpeedLimit);
+    final candidate = _candidate(speedKmh, roadSpeedLimit);
+    final pending = _pending;
+    if (pending != null) {
+      if (pending.matches(speedKmh, roadSpeedLimit)) {
+        _pending = null;
+        _lastSpeed = speedKmh;
+        _consume(pending);
+        return pending.alert;
+      }
+      _pending = null;
+    }
+
+    _lastSpeed = speedKmh;
+    if (candidate != null) _pending = candidate;
+    return null;
+  }
+
+  _PendingAlert? _candidate(double speed, double? limit) {
+    final previous = _lastSpeed;
+    if (limit != null && limit > 0) {
+      if (speed < limit / 2 &&
+          _belowHalfArmed &&
+          (previous == null || previous >= limit / 2)) {
+        return _PendingAlert.belowHalf(limit);
+      }
+      if (speed > limit &&
+          _aboveLimitArmed &&
+          (previous == null || previous <= limit)) {
+        return _PendingAlert.aboveLimit(limit);
+      }
+    }
+    if (previous == null) return null;
+
+    final from = previous.floor();
+    final to = speed.floor();
+    if (to > from) {
+      final band = (to ~/ 5) * 5;
+      if (band > 0 && band > from && _ascendingBandArmed[band] != false) {
+        return _PendingAlert.band(band, ascending: true);
+      }
+    }
+    if (to < from) {
+      final band = ((to + 4) ~/ 5) * 5;
+      if (band > 0 && band < from && _descendingBandArmed[band] != false) {
+        return _PendingAlert.band(band, ascending: false);
+      }
+    }
+    return null;
+  }
+
+  void _consume(_PendingAlert pending) {
+    switch (pending.alert.kind) {
+      case VoiceAlertKind.belowHalfLimit:
+        _belowHalfArmed = false;
+        return;
+      case VoiceAlertKind.aboveLimit:
+        _aboveLimitArmed = false;
+        return;
+      case VoiceAlertKind.speedBand:
+        final band = pending.band!;
+        (pending.ascending == true
+            ? _ascendingBandArmed
+            : _descendingBandArmed)[band] = false;
+        return;
+    }
+  }
+
+  void _rearmRelativeAlerts(double speed, double? limit) {
+    if (limit == null || limit <= 0) return;
+    if (speed >= limit / 2 + 2) _belowHalfArmed = true;
+    if (speed <= limit - 2) _aboveLimitArmed = true;
+  }
+}
+
+class _PendingAlert {
+  const _PendingAlert._({
+    required this.alert,
+    required this.condition,
+    this.band,
+    this.ascending,
+  });
+
+  factory _PendingAlert.belowHalf(double limit) => _PendingAlert._(
+        alert: const VoiceAlert(
+          kind: VoiceAlertKind.belowHalfLimit,
+          message: 'Velocidade abaixo da metade do limite da via.',
+        ),
+        condition: (speed, currentLimit) =>
+            currentLimit == limit && speed < limit / 2,
+      );
+
+  factory _PendingAlert.aboveLimit(double limit) => _PendingAlert._(
+        alert: const VoiceAlert(
+          kind: VoiceAlertKind.aboveLimit,
+          message: 'Atenção: acima do limite de velocidade.',
+        ),
+        condition: (speed, currentLimit) =>
+            currentLimit == limit && speed > limit,
+      );
+
+  factory _PendingAlert.band(int band, {required bool ascending}) =>
+      _PendingAlert._(
+        alert: VoiceAlert(
+          kind: VoiceAlertKind.speedBand,
+          message: '$band quilômetros por hora.',
+        ),
+        condition: (speed, _) => ascending ? speed >= band : speed <= band,
+        band: band,
+        ascending: ascending,
+      );
+
+  final VoiceAlert alert;
+  final bool Function(double speed, double? limit) condition;
+  final int? band;
+  final bool? ascending;
+
+  bool matches(double speed, double? limit) => condition(speed, limit);
+}
