@@ -38,6 +38,9 @@ class TelemetryController extends ChangeNotifier {
     RoadLimitDataSource? roadLimit,
     SpeechEngine? speech,
     DateTime Function()? clock,
+    this.staleAfter = const Duration(seconds: 3),
+    this.limitExpiryAfter = const Duration(seconds: 10),
+    this.staleCheckInterval = const Duration(seconds: 1),
   })  : _location = location ?? GeolocatorLocationDataSource(),
         _roadLimit = roadLimit ?? OverpassRoadLimitProvider(),
         _speech = speech ?? FlutterTtsSpeechEngine(),
@@ -47,6 +50,9 @@ class TelemetryController extends ChangeNotifier {
   final RoadLimitDataSource _roadLimit;
   final SpeechEngine _speech;
   final DateTime Function() _clock;
+  final Duration staleAfter;
+  final Duration limitExpiryAfter;
+  final Duration staleCheckInterval;
   final _alerts = SpeedAlertEngine();
   final _audio = AudioAnnouncementCoordinator();
   final _matcher = RoadMatcher();
@@ -81,8 +87,7 @@ class TelemetryController extends ChangeNotifier {
       status == TrackingStatus.awaitingGps || status == TrackingStatus.active;
   bool get hasFreshLocation =>
       _lastValidSample != null &&
-      _clock().difference(_sampleTime(_lastValidSample!)) <=
-          const Duration(seconds: 3);
+      _clock().difference(_sampleTime(_lastValidSample!)) <= staleAfter;
 
   DateTime _sampleTime(TelemetrySample sample) => sample.timestamp ?? _clock();
 
@@ -131,7 +136,7 @@ class TelemetryController extends ChangeNotifier {
         notifyListeners();
       },
     );
-    _staleTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateStaleState());
+    _staleTimer = Timer.periodic(staleCheckInterval, (_) => _updateStaleState());
     notifyListeners();
   }
 
@@ -165,17 +170,17 @@ class TelemetryController extends ChangeNotifier {
       sample.speedMetersPerSecond.isFinite &&
       sample.horizontalAccuracy.isFinite &&
       sample.horizontalAccuracy <= 20 &&
-      _clock().difference(_sampleTime(sample)) <= const Duration(seconds: 3);
+      _clock().difference(_sampleTime(sample)) <= staleAfter;
 
   void _updateStaleState() {
     if (!isTracking) return;
     final last = _lastValidSample;
     if (last == null ||
-        _clock().difference(_sampleTime(last)) > const Duration(seconds: 3)) {
+        _clock().difference(_sampleTime(last)) > staleAfter) {
       degradationReasons.add(TelemetryDegradedReason.locationStale);
     }
     if (last == null ||
-        _clock().difference(_sampleTime(last)) > const Duration(seconds: 10)) {
+        _clock().difference(_sampleTime(last)) > limitExpiryAfter) {
       roadSpeedLimit = null;
       roadWayId = null;
       roadName = null;

@@ -51,6 +51,47 @@ void main() {
     expect(road.calls, 1);
     await controller.stop();
   });
+
+  test('marca localização desatualizada e se recupera com nova amostra',
+      () async {
+    var now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(),
+      clock: () => now,
+      staleAfter: const Duration(seconds: 1),
+      limitExpiryAfter: const Duration(seconds: 2),
+      staleCheckInterval: const Duration(milliseconds: 10),
+    );
+    await controller.start(
+        allowOnline: false, announceLimits: true, announceBands: false);
+    location.emit(TelemetrySample(
+      latitude: -23.5,
+      longitude: -46.6,
+      speedMetersPerSecond: 10,
+      speedAccuracy: 1,
+      timestamp: now,
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    now = now.add(const Duration(seconds: 2));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.locationStale));
+
+    location.emit(TelemetrySample(
+      latitude: -23.5,
+      longitude: -46.6,
+      speedMetersPerSecond: 10,
+      speedAccuracy: 1,
+      timestamp: now,
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(controller.degradationReasons,
+        isNot(contains(TelemetryDegradedReason.locationStale)));
+    await controller.stop();
+  });
 }
 
 class _FakeLocation implements LocationDataSource {
