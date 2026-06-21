@@ -15,10 +15,23 @@ class GeolocatorLocationDataSource implements LocationDataSource {
       _mapPermission(await Geolocator.requestPermission());
 
   @override
+  Future<void> openAppSettings() => Geolocator.openAppSettings();
+
+  @override
+  Future<void> openLocationSettings() => Geolocator.openLocationSettings();
+
+  @override
   Stream<TelemetrySample> get samples => Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
+        locationSettings: AndroidSettings(
           accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: 1,
+          intervalDuration: Duration(seconds: 1),
+          foregroundNotificationConfig: ForegroundNotificationConfig(
+            notificationTitle: 'Speedometer em rastreamento',
+            notificationText: 'Monitorando velocidade por GPS.',
+            enableWakeLock: true,
+            setOngoing: true,
+          ),
         ),
       ).map(
         (position) => TelemetrySample(
@@ -26,6 +39,11 @@ class GeolocatorLocationDataSource implements LocationDataSource {
           longitude: position.longitude,
           speedMetersPerSecond: position.speed,
           speedAccuracy: position.speedAccuracy,
+          horizontalAccuracy: position.accuracy,
+          heading: position.heading.isNaN ? null : position.heading,
+          headingAccuracy:
+              position.headingAccuracy.isNaN ? null : position.headingAccuracy,
+          timestamp: position.timestamp,
         ),
       );
 

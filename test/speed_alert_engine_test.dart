@@ -51,6 +51,22 @@ void main() {
         '15 quilômetros por hora.');
   });
 
+  test('anuncia somente a faixa mais próxima em saltos e confirma descida', () {
+    final engine = SpeedAlertEngine();
+    engine.process(speedKmh: 14, isValid: true, roadSpeedLimit: null);
+    expect(engine.process(speedKmh: 26, isValid: true, roadSpeedLimit: null),
+        isNull);
+    expect(engine.process(speedKmh: 26.1, isValid: true, roadSpeedLimit: null)?.message,
+        '25 quilômetros por hora.');
+
+    final descending = SpeedAlertEngine();
+    descending.process(speedKmh: 26, isValid: true, roadSpeedLimit: null);
+    expect(descending.process(speedKmh: 14, isValid: true, roadSpeedLimit: null),
+        isNull);
+    expect(descending.process(speedKmh: 13.9, isValid: true, roadSpeedLimit: null)?.message,
+        '15 quilômetros por hora.');
+  });
+
   test('rearma excesso somente após retornar abaixo da margem', () {
     final engine = SpeedAlertEngine();
     engine.process(speedKmh: 40, isValid: true, roadSpeedLimit: 40);
@@ -63,6 +79,18 @@ void main() {
     engine.process(speedKmh: 41, isValid: true, roadSpeedLimit: 40);
     expect(
         engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40)?.kind,
+        VoiceAlertKind.aboveLimit);
+  });
+
+  test('rearma avisos relativos somente após duas leituras na margem', () {
+    final engine = SpeedAlertEngine();
+    engine.process(speedKmh: 40, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 41, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 38, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 38, isValid: true, roadSpeedLimit: 40);
+    engine.process(speedKmh: 41, isValid: true, roadSpeedLimit: 40);
+    expect(engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40)?.kind,
         VoiceAlertKind.aboveLimit);
   });
 }

@@ -34,12 +34,18 @@ class VoiceSettings {
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
     required this.settings,
+    required this.dataMode,
     required this.onChanged,
+    required this.onDataModeChanged,
+    required this.onPreview,
     super.key,
   });
 
   final VoiceSettings settings;
+  final String dataMode;
   final ValueChanged<VoiceSettings> onChanged;
+  final ValueChanged<String> onDataModeChanged;
+  final Future<void> Function(VoiceSettings settings) onPreview;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -47,6 +53,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late VoiceSettings _settings = widget.settings;
+  late String _dataMode = widget.dataMode;
 
   void _update(VoiceSettings settings) {
     setState(() => _settings = settings);
@@ -124,11 +131,44 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Modo de dados', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  const Text('O modo online envia a posição atual diretamente ao Overpass/OSM para identificar a via.'),
+                  RadioGroup<String>(
+                    groupValue: _dataMode,
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _dataMode = value);
+                        widget.onDataModeChanged(value);
+                      }
+                    },
+                    child: const Column(children: [
+                      RadioListTile<String>(value: 'Online e offline', title: Text('Online e offline')),
+                      RadioListTile<String>(value: 'Somente offline', title: Text('Somente offline')),
+                    ]),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const _SettingsHint(
             icon: Icons.volume_up_outlined,
             title: 'Exemplo de voz',
             body:
                 'Disponível quando o motor de voz pt-BR estiver configurado no dispositivo.',
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => widget.onPreview(_settings),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Ouvir exemplo'),
           ),
         ],
       ),

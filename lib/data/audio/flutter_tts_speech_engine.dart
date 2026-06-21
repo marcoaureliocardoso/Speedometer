@@ -6,9 +6,17 @@ class FlutterTtsSpeechEngine implements SpeechEngine {
   final _tts = FlutterTts();
 
   @override
-  Future<void> configure() async {
+  Future<bool> configure({
+    required double volume,
+    required double speechRate,
+  }) async {
+    final available = await _tts.isLanguageAvailable('pt-BR');
+    if (available != true) return false;
     await _tts.setLanguage('pt-BR');
-    await _tts.setSpeechRate(1);
+    await _tts.awaitSpeakCompletion(true);
+    await _tts.setVolume(volume);
+    await _tts.setSpeechRate(speechRate);
+    return true;
   }
 
   @override

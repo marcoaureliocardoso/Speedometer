@@ -7,6 +7,8 @@ class SpeedAlertEngine {
   _PendingAlert? _pending;
   bool _belowHalfArmed = true;
   bool _aboveLimitArmed = true;
+  int _belowHalfRearmReadings = 0;
+  int _aboveLimitRearmReadings = 0;
   final Map<int, bool> _ascendingBandArmed = {};
   final Map<int, bool> _descendingBandArmed = {};
 
@@ -70,6 +72,8 @@ class SpeedAlertEngine {
 
   void _consume(_PendingAlert pending) {
     switch (pending.alert.kind) {
+      case VoiceAlertKind.roadLimitChanged:
+        return;
       case VoiceAlertKind.belowHalfLimit:
         _belowHalfArmed = false;
         return;
@@ -87,8 +91,14 @@ class SpeedAlertEngine {
 
   void _rearmRelativeAlerts(double speed, double? limit) {
     if (limit == null || limit <= 0) return;
-    if (speed >= limit / 2 + 2) _belowHalfArmed = true;
-    if (speed <= limit - 2) _aboveLimitArmed = true;
+    _belowHalfRearmReadings = speed >= limit / 2 + 2
+        ? _belowHalfRearmReadings + 1
+        : 0;
+    _aboveLimitRearmReadings = speed <= limit - 2
+        ? _aboveLimitRearmReadings + 1
+        : 0;
+    if (_belowHalfRearmReadings >= 2) _belowHalfArmed = true;
+    if (_aboveLimitRearmReadings >= 2) _aboveLimitArmed = true;
   }
 }
 

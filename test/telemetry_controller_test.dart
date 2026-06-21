@@ -14,7 +14,7 @@ void main() {
     );
     await controller.start(
         allowOnline: false, announceLimits: true, announceBands: false);
-    expect(controller.status, TrackingStatus.permissionDenied);
+    expect(controller.status, TrackingStatus.permissionDeniedForever);
   });
 
   test('atualiza velocidade e consulta limite online', () async {
@@ -24,11 +24,26 @@ void main() {
         location: location, roadLimit: road, speech: _FakeSpeech());
     await controller.start(
         allowOnline: true, announceLimits: true, announceBands: false);
-    location.emit(const TelemetrySample(
+    final now = DateTime.now();
+    location.emit(TelemetrySample(
         latitude: -23.5,
         longitude: -46.6,
         speedMetersPerSecond: 10,
-        speedAccuracy: 1));
+        speedAccuracy: 1,
+        horizontalAccuracy: 5,
+        heading: 90,
+        headingAccuracy: 5,
+        timestamp: now));
+    await Future<void>.delayed(Duration.zero);
+    location.emit(TelemetrySample(
+        latitude: -23.5,
+        longitude: -46.6,
+        speedMetersPerSecond: 10,
+        speedAccuracy: 1,
+        horizontalAccuracy: 5,
+        heading: 90,
+        headingAccuracy: 5,
+        timestamp: now.add(const Duration(seconds: 1))));
     await Future<void>.delayed(Duration.zero);
     expect(controller.status, TrackingStatus.active);
     expect(controller.speedKmh, 36);
@@ -51,6 +66,10 @@ class _FakeLocation implements LocationDataSource {
   Future<LocationPermissionStatus> requestPermission() async => permission;
   @override
   Stream<TelemetrySample> get samples => _controller.stream;
+  @override
+  Future<void> openAppSettings() async {}
+  @override
+  Future<void> openLocationSettings() async {}
 }
 
 class _FakeRoadLimit implements RoadLimitDataSource {
@@ -58,10 +77,17 @@ class _FakeRoadLimit implements RoadLimitDataSource {
   final int? limit;
   int calls = 0;
   @override
-  Future<int?> fetchLimit(
+  Future<List<RoadSegment>> fetchCandidates(
       {required double latitude, required double longitude}) async {
     calls++;
-    return limit;
+    if (limit == null) return const [];
+    return [
+      RoadSegment(
+        id: 1,
+        points: const [GeoPoint(-23.5, -46.6002), GeoPoint(-23.5, -46.5998)],
+        tags: {'maxspeed': '$limit'},
+      ),
+    ];
   }
 
   @override
@@ -70,7 +96,7 @@ class _FakeRoadLimit implements RoadLimitDataSource {
 
 class _FakeSpeech implements SpeechEngine {
   @override
-  Future<void> configure() async {}
+  Future<bool> configure({required double volume, required double speechRate}) async => true;
   @override
   Future<void> speak(String message) async {}
   @override
