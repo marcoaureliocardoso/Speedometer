@@ -110,6 +110,48 @@ void main() {
     await controller.stop();
   });
 
+  test('inicia a captura de GPS sem aguardar a configuração de voz', () async {
+    final voiceConfigured = Completer<bool>();
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(configureCompleter: voiceConfigured),
+    );
+
+    final start = controller.start(
+        allowOnline: false, announceLimits: true, announceBands: false);
+    await Future<void>.delayed(Duration.zero);
+    location.emit(_validSample());
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.speedKmh, 36);
+    voiceConfigured.complete(true);
+    await start;
+    await controller.stop();
+  });
+
+  test('registra a latência da amostra de localização', () async {
+    final now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(),
+      clock: () => now,
+    );
+
+    await controller.start(
+        allowOnline: false, announceLimits: true, announceBands: false);
+    location.emit(_validSample(
+        timestamp: now.subtract(const Duration(milliseconds: 250))));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.lastLocationReceivedAt, now);
+    expect(controller.lastLocationLatency, const Duration(milliseconds: 250));
+    await controller.stop();
+  });
+
   test('não consulta a via quando o modo online está desativado', () async {
     final location = _FakeLocation();
     final road = _FakeRoadLimit(limit: 60);
@@ -234,12 +276,13 @@ class _FakeRoadLimit implements RoadLimitDataSource {
 }
 
 class _FakeSpeech implements SpeechEngine {
-  _FakeSpeech({this.ttsAvailable = true});
+  _FakeSpeech({this.ttsAvailable = true, this.configureCompleter});
   final bool ttsAvailable;
+  final Completer<bool>? configureCompleter;
   @override
   Future<bool> configure(
-          {required double volume, required double speechRate}) async =>
-      ttsAvailable;
+          {required double volume, required double speechRate}) =>
+      configureCompleter?.future ?? Future.value(ttsAvailable);
   @override
   Future<void> speak(String message) async {}
   @override

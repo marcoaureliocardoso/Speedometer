@@ -3,6 +3,18 @@ import 'package:geolocator/geolocator.dart';
 import '../../domain/telemetry/telemetry_dependencies.dart';
 
 class GeolocatorLocationDataSource implements LocationDataSource {
+  static AndroidSettings get locationSettings => AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+        intervalDuration: const Duration(milliseconds: 500),
+        foregroundNotificationConfig: ForegroundNotificationConfig(
+          notificationTitle: 'Speedometer em rastreamento',
+          notificationText: 'Monitorando velocidade por GPS.',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+
   @override
   Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
 
@@ -22,17 +34,7 @@ class GeolocatorLocationDataSource implements LocationDataSource {
 
   @override
   Stream<TelemetrySample> get samples => Geolocator.getPositionStream(
-        locationSettings: AndroidSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1,
-          intervalDuration: Duration(seconds: 1),
-          foregroundNotificationConfig: ForegroundNotificationConfig(
-            notificationTitle: 'Speedometer em rastreamento',
-            notificationText: 'Monitorando velocidade por GPS.',
-            enableWakeLock: true,
-            setOngoing: true,
-          ),
-        ),
+        locationSettings: locationSettings,
       ).map(
         (position) => TelemetrySample(
           latitude: position.latitude,
