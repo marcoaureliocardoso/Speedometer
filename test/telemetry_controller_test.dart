@@ -48,6 +48,7 @@ void main() {
     expect(controller.status, TrackingStatus.active);
     expect(controller.speedKmh, 36);
     expect(controller.roadSpeedLimit, 60);
+    expect(controller.roadName, 'Via de teste');
     expect(road.calls, 1);
     await controller.stop();
   });
@@ -108,7 +109,88 @@ void main() {
         contains(TelemetryDegradedReason.ttsUnavailable));
     await controller.stop();
   });
+
+  test('não consulta a via quando o modo online está desativado', () async {
+    final location = _FakeLocation();
+    final road = _FakeRoadLimit(limit: 60);
+    final controller = TelemetryController(
+        location: location, roadLimit: road, speech: _FakeSpeech());
+
+    await controller.start(
+        allowOnline: false, announceLimits: true, announceBands: false);
+    location.emit(_validSample());
+    await Future<void>.delayed(Duration.zero);
+
+    expect(road.calls, 0);
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.roadName, isNull);
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.onlineDataDisabled));
+    await controller.stop();
+  });
+
+  test('marca via não confirmada quando a consulta não encontra candidatos',
+      () async {
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(),
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    location.emit(_validSample());
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.roadName, isNull);
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.roadMatchLowConfidence));
+    await controller.stop();
+  });
+
+  test('mantém o nome da via apenas até a expiração da localização', () async {
+    var now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: _FakeSpeech(),
+      clock: () => now,
+      staleAfter: const Duration(seconds: 1),
+      limitExpiryAfter: const Duration(seconds: 2),
+      staleCheckInterval: const Duration(milliseconds: 10),
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    location.emit(_validSample(timestamp: now));
+    await Future<void>.delayed(Duration.zero);
+    location.emit(_validSample(timestamp: now.add(const Duration(seconds: 1))));
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.roadName, 'Via de teste');
+
+    now = now.add(const Duration(seconds: 4));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.roadName, isNull);
+    expect(controller.roadWayId, isNull);
+    await controller.stop();
+  });
 }
+
+TelemetrySample _validSample({DateTime? timestamp}) => TelemetrySample(
+      latitude: -23.5,
+      longitude: -46.6,
+      speedMetersPerSecond: 10,
+      speedAccuracy: 1,
+      horizontalAccuracy: 5,
+      heading: 90,
+      headingAccuracy: 5,
+      timestamp: timestamp ?? DateTime.now(),
+    );
 
 class _FakeLocation implements LocationDataSource {
   _FakeLocation({this.permission = LocationPermissionStatus.granted});
@@ -142,7 +224,7 @@ class _FakeRoadLimit implements RoadLimitDataSource {
       RoadSegment(
         id: 1,
         points: const [GeoPoint(-23.5, -46.6002), GeoPoint(-23.5, -46.5998)],
-        tags: {'maxspeed': '$limit'},
+        tags: {'maxspeed': '$limit', 'name': 'Via de teste'},
       ),
     ];
   }
@@ -155,7 +237,8 @@ class _FakeSpeech implements SpeechEngine {
   _FakeSpeech({this.ttsAvailable = true});
   final bool ttsAvailable;
   @override
-  Future<bool> configure({required double volume, required double speechRate}) async =>
+  Future<bool> configure(
+          {required double volume, required double speechRate}) async =>
       ttsAvailable;
   @override
   Future<void> speak(String message) async {}

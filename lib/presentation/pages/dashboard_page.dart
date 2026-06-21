@@ -189,6 +189,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             speedKmh: _telemetry.speedKmh,
                             filteredNeedleSpeed: _telemetry.filteredNeedleSpeed,
                             roadSpeedLimit: _telemetry.roadSpeedLimit,
+                            roadName: _telemetry.roadName,
                             status: _telemetry.status,
                             degradationReasons: _telemetry.degradationReasons,
                           )
@@ -197,6 +198,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             speedKmh: _telemetry.speedKmh,
                             filteredNeedleSpeed: _telemetry.filteredNeedleSpeed,
                             roadSpeedLimit: _telemetry.roadSpeedLimit,
+                            roadName: _telemetry.roadName,
                             status: _telemetry.status,
                             degradationReasons: _telemetry.degradationReasons,
                           ),
@@ -348,7 +350,8 @@ class _PortraitDashboard extends StatelessWidget {
       required this.filteredNeedleSpeed,
       required this.status,
       required this.degradationReasons,
-      required this.roadSpeedLimit});
+      required this.roadSpeedLimit,
+      required this.roadName});
 
   final bool isTracking;
   final double? speedKmh;
@@ -356,6 +359,7 @@ class _PortraitDashboard extends StatelessWidget {
   final TrackingStatus status;
   final Set<TelemetryDegradedReason> degradationReasons;
   final int? roadSpeedLimit;
+  final String? roadName;
 
   @override
   Widget build(BuildContext context) {
@@ -366,7 +370,13 @@ class _PortraitDashboard extends StatelessWidget {
           const SizedBox(height: 16),
           SpeedometerGauge(speed: filteredNeedleSpeed, roadSpeedLimit: roadSpeedLimit?.toDouble()),
           const SizedBox(height: 16),
-          _LimitStatus(isTracking: isTracking, roadSpeedLimit: roadSpeedLimit, degradationReasons: degradationReasons, speedKmh: speedKmh),
+          LimitStatus(
+            isTracking: isTracking,
+            roadSpeedLimit: roadSpeedLimit,
+            roadName: roadName,
+            degradationReasons: degradationReasons,
+            speedKmh: speedKmh,
+          ),
           const SizedBox(height: 16),
           const _LegalNotice(),
         ],
@@ -382,7 +392,8 @@ class _LandscapeDashboard extends StatelessWidget {
       required this.filteredNeedleSpeed,
       required this.status,
       required this.degradationReasons,
-      required this.roadSpeedLimit});
+      required this.roadSpeedLimit,
+      required this.roadName});
 
   final bool isTracking;
   final double? speedKmh;
@@ -390,6 +401,7 @@ class _LandscapeDashboard extends StatelessWidget {
   final TrackingStatus status;
   final Set<TelemetryDegradedReason> degradationReasons;
   final int? roadSpeedLimit;
+  final String? roadName;
 
   @override
   Widget build(BuildContext context) {
@@ -415,8 +427,13 @@ class _LandscapeDashboard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _LimitStatus(
-                    isTracking: isTracking, roadSpeedLimit: roadSpeedLimit, degradationReasons: degradationReasons, speedKmh: speedKmh),
+                LimitStatus(
+                  isTracking: isTracking,
+                  roadSpeedLimit: roadSpeedLimit,
+                  roadName: roadName,
+                  degradationReasons: degradationReasons,
+                  speedKmh: speedKmh,
+                ),
                 const SizedBox(height: 16),
                 const _LegalNotice(),
               ],
@@ -465,11 +482,19 @@ class _SpeedReadout extends StatelessWidget {
   }
 }
 
-class _LimitStatus extends StatelessWidget {
-  const _LimitStatus({required this.isTracking, required this.roadSpeedLimit, required this.degradationReasons, required this.speedKmh});
+class LimitStatus extends StatelessWidget {
+  const LimitStatus({
+    super.key,
+    required this.isTracking,
+    required this.roadSpeedLimit,
+    required this.roadName,
+    required this.degradationReasons,
+    required this.speedKmh,
+  });
 
   final bool isTracking;
   final int? roadSpeedLimit;
+  final String? roadName;
   final Set<TelemetryDegradedReason> degradationReasons;
   final double? speedKmh;
 
@@ -477,10 +502,11 @@ class _LimitStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final limit = roadSpeedLimit;
+    final hasRoadName = roadName?.trim().isNotEmpty == true;
     final isOverLimit = limit != null && (speedKmh ?? 0) > limit;
     return Semantics(
       label: limit != null
-          ? 'Limite: $limit quilômetros por hora.'
+          ? 'Limite: $limit quilômetros por hora.${hasRoadName ? ' Via atual: ${roadName!.trim()}.' : ''}'
           : isTracking
               ? 'Limite indisponível. Aguardando uma posição válida.'
               : 'Limite indisponível.',
@@ -501,6 +527,13 @@ class _LimitStatus extends StatelessWidget {
                               ? 'Limite: $limit km/h'
                               : 'Limite indisponível',
                           style: Theme.of(context).textTheme.titleMedium),
+                      if (hasRoadName) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Via atual: ${roadName!.trim()}',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       if (isOverLimit)
                         const Row(children: [Icon(Icons.warning_amber_rounded), SizedBox(width: 6), Text('Acima do limite')]),
