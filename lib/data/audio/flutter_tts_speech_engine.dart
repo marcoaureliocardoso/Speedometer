@@ -10,13 +10,19 @@ class FlutterTtsSpeechEngine implements SpeechEngine {
     required double volume,
     required double speechRate,
   }) async {
-    final available = await _tts.isLanguageAvailable('pt-BR');
-    if (available != true) return false;
-    await _tts.setLanguage('pt-BR');
-    await _tts.awaitSpeakCompletion(true);
-    await _tts.setVolume(volume);
-    await _tts.setSpeechRate(speechRate);
-    return true;
+    try {
+      final available = await _tts
+          .isLanguageAvailable('pt-BR')
+          .timeout(const Duration(seconds: 3));
+      if (available != true) return false;
+      await _tts.setLanguage('pt-BR').timeout(const Duration(seconds: 3));
+      await _tts.awaitSpeakCompletion(true).timeout(const Duration(seconds: 3));
+      await _tts.setVolume(volume).timeout(const Duration(seconds: 3));
+      await _tts.setSpeechRate(speechRate).timeout(const Duration(seconds: 3));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
