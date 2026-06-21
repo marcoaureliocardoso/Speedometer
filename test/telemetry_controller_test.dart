@@ -92,6 +92,22 @@ void main() {
         isNot(contains(TelemetryDegradedReason.locationStale)));
     await controller.stop();
   });
+
+  test('mantém o painel em modo visual quando TTS pt-BR não está disponível',
+      () async {
+    final controller = TelemetryController(
+      location: _FakeLocation(),
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(ttsAvailable: false),
+    );
+
+    await controller.start(
+        allowOnline: false, announceLimits: true, announceBands: false);
+
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.ttsUnavailable));
+    await controller.stop();
+  });
 }
 
 class _FakeLocation implements LocationDataSource {
@@ -136,8 +152,11 @@ class _FakeRoadLimit implements RoadLimitDataSource {
 }
 
 class _FakeSpeech implements SpeechEngine {
+  _FakeSpeech({this.ttsAvailable = true});
+  final bool ttsAvailable;
   @override
-  Future<bool> configure({required double volume, required double speechRate}) async => true;
+  Future<bool> configure({required double volume, required double speechRate}) async =>
+      ttsAvailable;
   @override
   Future<void> speak(String message) async {}
   @override
