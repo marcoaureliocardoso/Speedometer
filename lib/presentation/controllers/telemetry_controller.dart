@@ -72,6 +72,7 @@ class TelemetryController extends ChangeNotifier {
   bool _announceLimits = true;
   bool _announceBands = false;
   int _bandIntervalKmh = 5;
+  int? _customSpeedLimitKmh;
   bool _ttsReady = false;
   DateTime? _suppressRelativeAlertsUntil;
   final Set<int> _ignoredWayIds = {};
@@ -100,15 +101,21 @@ class TelemetryController extends ChangeNotifier {
     required bool announceLimits,
     required bool announceBands,
     int bandIntervalKmh = 5,
+    int? customSpeedLimitKmh,
     double volume = 1,
     double speechRate = 1,
   }) async {
     await stop();
+    _alerts.reset();
     _session++;
     _allowOnline = allowOnline;
     _announceLimits = announceLimits;
     _announceBands = announceBands;
     _bandIntervalKmh = bandIntervalKmh == 10 ? 10 : 5;
+    _customSpeedLimitKmh =
+        customSpeedLimitKmh != null && customSpeedLimitKmh > 0
+            ? customSpeedLimitKmh
+            : null;
     _ttsReady = false;
     degradationReasons.clear();
     if (!allowOnline) {
@@ -234,19 +241,24 @@ class TelemetryController extends ChangeNotifier {
       speedKmh: speedKmh ?? 0,
       isValid: sample.speedAccuracy <= 1.5,
       roadSpeedLimit: roadSpeedLimit?.toDouble(),
+      customSpeedLimitKmh: _customSpeedLimitKmh,
       bandIntervalKmh: _bandIntervalKmh,
     );
-    if (alert == null || _ignoredWayIds.contains(roadWayId)) {
+    if (alert == null ||
+        (alert.kind != VoiceAlertKind.customSpeedLimitExceeded &&
+            _ignoredWayIds.contains(roadWayId))) {
       return;
     }
     if (_suppressRelativeAlertsUntil?.isAfter(_clock()) == true &&
-        alert.kind != VoiceAlertKind.speedBand) {
+        (alert.kind == VoiceAlertKind.belowHalfLimit ||
+            alert.kind == VoiceAlertKind.aboveLimit)) {
       return;
     }
     final shouldSpeak = switch (alert.kind) {
       VoiceAlertKind.speedBand => _announceBands,
       VoiceAlertKind.belowHalfLimit ||
       VoiceAlertKind.aboveLimit ||
+      VoiceAlertKind.customSpeedLimitExceeded ||
       VoiceAlertKind.roadLimitChanged =>
         _announceLimits,
     };

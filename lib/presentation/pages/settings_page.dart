@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+const _unchanged = Object();
 
 enum VoiceMode { silent, limitsOnly, limitsAndBands }
 
@@ -16,23 +19,30 @@ class VoiceSettings {
     this.volume = 1,
     this.speechRate = 1,
     this.bandIntervalKmh = 5,
+    this.customSpeedLimitKmh,
   }) : assert(bandIntervalKmh == 5 || bandIntervalKmh == 10);
 
   final VoiceMode mode;
   final double volume;
   final double speechRate;
   final int bandIntervalKmh;
+  final int? customSpeedLimitKmh;
 
-  VoiceSettings copyWith(
-      {VoiceMode? mode,
-      double? volume,
-      double? speechRate,
-      int? bandIntervalKmh}) {
+  VoiceSettings copyWith({
+    VoiceMode? mode,
+    double? volume,
+    double? speechRate,
+    int? bandIntervalKmh,
+    Object? customSpeedLimitKmh = _unchanged,
+  }) {
     return VoiceSettings(
       mode: mode ?? this.mode,
       volume: volume ?? this.volume,
       speechRate: speechRate ?? this.speechRate,
       bandIntervalKmh: bandIntervalKmh ?? this.bandIntervalKmh,
+      customSpeedLimitKmh: identical(customSpeedLimitKmh, _unchanged)
+          ? this.customSpeedLimitKmh
+          : customSpeedLimitKmh as int?,
     );
   }
 }
@@ -60,10 +70,37 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late VoiceSettings _settings = widget.settings;
   late String _dataMode = widget.dataMode;
+  late final TextEditingController _customLimitController =
+      TextEditingController(
+          text: _settings.customSpeedLimitKmh?.toString() ?? '');
+  String? _customLimitError;
 
   void _update(VoiceSettings settings) {
     setState(() => _settings = settings);
     widget.onChanged(settings);
+  }
+
+  void _updateCustomSpeedLimit(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _customLimitError = null);
+      _update(_settings.copyWith(customSpeedLimitKmh: null));
+      return;
+    }
+    final limit = int.tryParse(trimmed);
+    if (limit == null || limit < 1 || limit > 300) {
+      setState(
+          () => _customLimitError = 'Informe um valor entre 1 e 300 km/h.');
+      return;
+    }
+    setState(() => _customLimitError = null);
+    _update(_settings.copyWith(customSpeedLimitKmh: limit));
+  }
+
+  @override
+  void dispose() {
+    _customLimitController.dispose();
+    super.dispose();
   }
 
   @override
@@ -164,6 +201,45 @@ class _SettingsPageState extends State<SettingsPage> {
                     valueLabel: '${_settings.speechRate.toStringAsFixed(1)}×',
                     onChanged: (value) =>
                         _update(_settings.copyWith(speechRate: value)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Limite de velocidade personalizado',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Opcional. Ao ultrapassá-lo, o app avisa por voz.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _customLimitController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: _updateCustomSpeedLimit,
+                    decoration: InputDecoration(
+                      labelText: 'Limite personalizado (km/h)',
+                      hintText: 'Ex.: 80',
+                      errorText: _customLimitError,
+                      suffixIcon: _settings.customSpeedLimitKmh != null
+                          ? IconButton(
+                              tooltip: 'Remover limite personalizado',
+                              onPressed: () {
+                                _customLimitController.clear();
+                                _updateCustomSpeedLimit('');
+                              },
+                              icon: const Icon(Icons.clear),
+                            )
+                          : null,
+                    ),
                   ),
                 ],
               ),

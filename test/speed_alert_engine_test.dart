@@ -39,6 +39,123 @@ void main() {
         isNull);
   });
 
+  test('anuncia limite personalizado após duas leituras acima do valor', () {
+    final engine = SpeedAlertEngine();
+
+    engine.process(
+        speedKmh: 80,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+    expect(
+      engine.process(
+          speedKmh: 81,
+          isValid: true,
+          roadSpeedLimit: null,
+          customSpeedLimitKmh: 80),
+      isNull,
+    );
+
+    final alert = engine.process(
+        speedKmh: 82,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+    expect(alert?.kind, VoiceAlertKind.customSpeedLimitExceeded);
+    expect(alert?.message, 'Limite de velocidade 80Km/h ultrapassado.');
+  });
+
+  test('rearma o limite personalizado somente após duas leituras seguras', () {
+    final engine = SpeedAlertEngine();
+
+    for (final speed in [80.0, 81.0]) {
+      engine.process(
+          speedKmh: speed,
+          isValid: true,
+          roadSpeedLimit: null,
+          customSpeedLimitKmh: 80);
+    }
+    expect(
+      engine
+          .process(
+              speedKmh: 82,
+              isValid: true,
+              roadSpeedLimit: null,
+              customSpeedLimitKmh: 80)
+          ?.kind,
+      VoiceAlertKind.customSpeedLimitExceeded,
+    );
+
+    expect(
+      engine.process(
+          speedKmh: 83,
+          isValid: true,
+          roadSpeedLimit: null,
+          customSpeedLimitKmh: 80),
+      isNull,
+    );
+    engine.process(
+        speedKmh: 78,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+    engine.process(
+        speedKmh: 78,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+    engine.process(
+        speedKmh: 81,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+
+    expect(
+      engine
+          .process(
+              speedKmh: 82,
+              isValid: true,
+              roadSpeedLimit: null,
+              customSpeedLimitKmh: 80)
+          ?.kind,
+      VoiceAlertKind.customSpeedLimitExceeded,
+    );
+  });
+
+  test('reinicia o alerta personalizado ao iniciar uma nova sessão', () {
+    final engine = SpeedAlertEngine();
+
+    for (final speed in [80.0, 81.0, 82.0]) {
+      engine.process(
+          speedKmh: speed,
+          isValid: true,
+          roadSpeedLimit: null,
+          customSpeedLimitKmh: 80);
+    }
+    engine.reset();
+    engine.process(
+        speedKmh: 80,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+    engine.process(
+        speedKmh: 81,
+        isValid: true,
+        roadSpeedLimit: null,
+        customSpeedLimitKmh: 80);
+
+    expect(
+      engine
+          .process(
+              speedKmh: 82,
+              isValid: true,
+              roadSpeedLimit: null,
+              customSpeedLimitKmh: 80)
+          ?.kind,
+      VoiceAlertKind.customSpeedLimitExceeded,
+    );
+  });
+
   test('confirma faixa de 5 km/h em aceleração', () {
     final engine = SpeedAlertEngine();
     engine.process(speedKmh: 14.9, isValid: true, roadSpeedLimit: null);

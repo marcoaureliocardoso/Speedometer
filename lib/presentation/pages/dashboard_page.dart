@@ -41,6 +41,7 @@ class _DashboardPageState extends State<DashboardPage> {
         volume: saved.volume,
         speechRate: saved.speechRate,
         bandIntervalKmh: saved.bandIntervalKmh == 10 ? 10 : 5,
+        customSpeedLimitKmh: saved.customSpeedLimitKmh,
       );
     });
   }
@@ -50,6 +51,7 @@ class _DashboardPageState extends State<DashboardPage> {
         volume: _voiceSettings.volume,
         speechRate: _voiceSettings.speechRate,
         bandIntervalKmh: _voiceSettings.bandIntervalKmh,
+        customSpeedLimitKmh: _voiceSettings.customSpeedLimitKmh,
         dataMode: _dataMode,
       );
 
@@ -85,6 +87,7 @@ class _DashboardPageState extends State<DashboardPage> {
         volume: _voiceSettings.volume,
         speechRate: _voiceSettings.speechRate,
         bandIntervalKmh: _voiceSettings.bandIntervalKmh,
+        customSpeedLimitKmh: _voiceSettings.customSpeedLimitKmh,
       );
     }
   }

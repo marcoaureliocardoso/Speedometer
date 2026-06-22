@@ -117,6 +117,86 @@ void main() {
     await controller.stop();
   });
 
+  test('narra quando o limite personalizado é ultrapassado', () async {
+    final location = _FakeLocation();
+    final speech = _FakeSpeech();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: speech,
+    );
+
+    await controller.start(
+      allowOnline: false,
+      announceLimits: true,
+      announceBands: false,
+      customSpeedLimitKmh: 80,
+    );
+    for (final speedKmh in [80.0, 81.0, 82.0]) {
+      location.emit(_validSample(
+          speedMetersPerSecond: speedKmh / 3.6, timestamp: DateTime.now()));
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(speech.messages, ['Limite de velocidade 80Km/h ultrapassado.']);
+    await controller.stop();
+  });
+
+  test('respeita o modo silencioso para o limite personalizado', () async {
+    final location = _FakeLocation();
+    final speech = _FakeSpeech();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: speech,
+    );
+
+    await controller.start(
+      allowOnline: false,
+      announceLimits: false,
+      announceBands: false,
+      customSpeedLimitKmh: 80,
+    );
+    for (final speedKmh in [80.0, 81.0, 82.0]) {
+      location.emit(_validSample(
+          speedMetersPerSecond: speedKmh / 3.6, timestamp: DateTime.now()));
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(speech.messages, isEmpty);
+    await controller.stop();
+  });
+
+  test('não suprime o limite personalizado após anunciar o limite da via',
+      () async {
+    var now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final speech = _FakeSpeech();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: speech,
+      clock: () => now,
+    );
+
+    await controller.start(
+      allowOnline: true,
+      announceLimits: true,
+      announceBands: false,
+      customSpeedLimitKmh: 80,
+    );
+    for (final speedKmh in [79.0, 81.0, 82.0]) {
+      location.emit(
+          _validSample(speedMetersPerSecond: speedKmh / 3.6, timestamp: now));
+      await Future<void>.delayed(Duration.zero);
+      now = now.add(const Duration(seconds: 1));
+    }
+
+    expect(
+        speech.messages, contains('Limite de velocidade 80Km/h ultrapassado.'));
+    await controller.stop();
+  });
+
   test('anuncia o limite confirmado durante a inicialização da voz', () async {
     final voiceConfigured = Completer<bool>();
     final location = _FakeLocation();

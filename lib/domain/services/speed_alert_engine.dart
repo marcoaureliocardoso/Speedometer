@@ -7,25 +7,49 @@ class SpeedAlertEngine {
   _PendingAlert? _pending;
   bool _belowHalfArmed = true;
   bool _aboveLimitArmed = true;
+  bool _customSpeedLimitArmed = true;
   int _belowHalfRearmReadings = 0;
   int _aboveLimitRearmReadings = 0;
+  int _customSpeedLimitRearmReadings = 0;
   final Map<int, bool> _ascendingBandArmed = {};
   final Map<int, bool> _descendingBandArmed = {};
+
+  void reset() {
+    _lastSpeed = null;
+    _pending = null;
+    _belowHalfArmed = true;
+    _aboveLimitArmed = true;
+    _customSpeedLimitArmed = true;
+    _belowHalfRearmReadings = 0;
+    _aboveLimitRearmReadings = 0;
+    _customSpeedLimitRearmReadings = 0;
+    _ascendingBandArmed.clear();
+    _descendingBandArmed.clear();
+  }
 
   VoiceAlert? process({
     required double speedKmh,
     required bool isValid,
     required double? roadSpeedLimit,
+    int? customSpeedLimitKmh,
     int bandIntervalKmh = 5,
   }) {
     if (!isValid || speedKmh.isNegative) return null;
 
-    _rearmRelativeAlerts(speedKmh, roadSpeedLimit);
-    final candidate =
-        _candidate(speedKmh, roadSpeedLimit, bandIntervalKmh == 10 ? 10 : 5);
+    final customSpeedLimit =
+        customSpeedLimitKmh != null && customSpeedLimitKmh > 0
+            ? customSpeedLimitKmh.toDouble()
+            : null;
+    _rearmRelativeAlerts(speedKmh, roadSpeedLimit, customSpeedLimit);
+    final candidate = _candidate(
+      speedKmh,
+      roadSpeedLimit,
+      customSpeedLimit,
+      bandIntervalKmh == 10 ? 10 : 5,
+    );
     final pending = _pending;
     if (pending != null) {
-      if (pending.matches(speedKmh, roadSpeedLimit)) {
+      if (pending.matches(speedKmh, roadSpeedLimit, customSpeedLimit)) {
         _pending = null;
         _lastSpeed = speedKmh;
         _consume(pending);
@@ -39,8 +63,15 @@ class SpeedAlertEngine {
     return null;
   }
 
-  _PendingAlert? _candidate(double speed, double? limit, int bandIntervalKmh) {
+  _PendingAlert? _candidate(
+      double speed, double? limit, double? customLimit, int bandIntervalKmh) {
     final previous = _lastSpeed;
+    if (customLimit != null &&
+        speed > customLimit &&
+        _customSpeedLimitArmed &&
+        (previous == null || previous <= customLimit)) {
+      return _PendingAlert.customSpeedLimit(customLimit);
+    }
     if (limit != null && limit > 0) {
       if (speed < limit / 2 &&
           _belowHalfArmed &&
@@ -83,6 +114,9 @@ class SpeedAlertEngine {
       case VoiceAlertKind.aboveLimit:
         _aboveLimitArmed = false;
         return;
+      case VoiceAlertKind.customSpeedLimitExceeded:
+        _customSpeedLimitArmed = false;
+        return;
       case VoiceAlertKind.speedBand:
         final band = pending.band!;
         (pending.ascending == true
@@ -92,14 +126,20 @@ class SpeedAlertEngine {
     }
   }
 
-  void _rearmRelativeAlerts(double speed, double? limit) {
-    if (limit == null || limit <= 0) return;
-    _belowHalfRearmReadings =
-        speed >= limit / 2 + 2 ? _belowHalfRearmReadings + 1 : 0;
-    _aboveLimitRearmReadings =
-        speed <= limit - 2 ? _aboveLimitRearmReadings + 1 : 0;
-    if (_belowHalfRearmReadings >= 2) _belowHalfArmed = true;
-    if (_aboveLimitRearmReadings >= 2) _aboveLimitArmed = true;
+  void _rearmRelativeAlerts(double speed, double? limit, double? customLimit) {
+    if (limit != null && limit > 0) {
+      _belowHalfRearmReadings =
+          speed >= limit / 2 + 2 ? _belowHalfRearmReadings + 1 : 0;
+      _aboveLimitRearmReadings =
+          speed <= limit - 2 ? _aboveLimitRearmReadings + 1 : 0;
+      if (_belowHalfRearmReadings >= 2) _belowHalfArmed = true;
+      if (_aboveLimitRearmReadings >= 2) _aboveLimitArmed = true;
+    }
+    if (customLimit != null) {
+      _customSpeedLimitRearmReadings =
+          speed <= customLimit - 2 ? _customSpeedLimitRearmReadings + 1 : 0;
+      if (_customSpeedLimitRearmReadings >= 2) _customSpeedLimitArmed = true;
+    }
   }
 }
 
@@ -116,7 +156,7 @@ class _PendingAlert {
           kind: VoiceAlertKind.belowHalfLimit,
           message: 'Velocidade abaixo da metade do limite da via.',
         ),
-        condition: (speed, currentLimit) =>
+        condition: (speed, currentLimit, _) =>
             currentLimit == limit && speed < limit / 2,
       );
 
@@ -125,8 +165,18 @@ class _PendingAlert {
           kind: VoiceAlertKind.aboveLimit,
           message: 'Atenção: acima do limite de velocidade.',
         ),
-        condition: (speed, currentLimit) =>
+        condition: (speed, currentLimit, _) =>
             currentLimit == limit && speed > limit,
+      );
+
+  factory _PendingAlert.customSpeedLimit(double limit) => _PendingAlert._(
+        alert: VoiceAlert(
+          kind: VoiceAlertKind.customSpeedLimitExceeded,
+          message:
+              'Limite de velocidade ${limit.toStringAsFixed(0)}Km/h ultrapassado.',
+        ),
+        condition: (speed, _, currentCustomLimit) =>
+            currentCustomLimit == limit && speed > limit,
       );
 
   factory _PendingAlert.band(int band, {required bool ascending}) =>
@@ -135,15 +185,17 @@ class _PendingAlert {
           kind: VoiceAlertKind.speedBand,
           message: '$band quilômetros por hora.',
         ),
-        condition: (speed, _) => ascending ? speed >= band : speed <= band,
+        condition: (speed, _, __) => ascending ? speed >= band : speed <= band,
         band: band,
         ascending: ascending,
       );
 
   final VoiceAlert alert;
-  final bool Function(double speed, double? limit) condition;
+  final bool Function(double speed, double? limit, double? customLimit)
+      condition;
   final int? band;
   final bool? ascending;
 
-  bool matches(double speed, double? limit) => condition(speed, limit);
+  bool matches(double speed, double? limit, double? customLimit) =>
+      condition(speed, limit, customLimit);
 }

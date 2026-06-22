@@ -22,4 +22,53 @@ void main() {
 
     expect(updated?.bandIntervalKmh, 10);
   });
+
+  testWidgets('aceita e remove o limite personalizado', (tester) async {
+    VoiceSettings? updated;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          settings: const VoiceSettings(),
+          dataMode: 'Somente offline',
+          onChanged: (settings) => updated = settings,
+          onDataModeChanged: (_) {},
+          onPreview: (_) async {},
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), '80');
+    await tester.pump();
+    expect(updated?.customSpeedLimitKmh, 80);
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pump();
+    expect(updated?.customSpeedLimitKmh, isNull);
+  });
+
+  testWidgets('rejeita limites personalizados fora do intervalo permitido',
+      (tester) async {
+    VoiceSettings? updated;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          settings: const VoiceSettings(),
+          dataMode: 'Somente offline',
+          onChanged: (settings) => updated = settings,
+          onDataModeChanged: (_) {},
+          onPreview: (_) async {},
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), '0');
+    await tester.pump();
+    expect(find.text('Informe um valor entre 1 e 300 km/h.'), findsOneWidget);
+    expect(updated, isNull);
+
+    await tester.enterText(find.byType(TextField), '301');
+    await tester.pump();
+    expect(find.text('Informe um valor entre 1 e 300 km/h.'), findsOneWidget);
+    expect(updated, isNull);
+  });
 }
