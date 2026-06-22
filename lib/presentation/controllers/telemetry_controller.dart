@@ -8,6 +8,7 @@ import '../../data/location/geolocator_location_data_source.dart';
 import '../../data/road_limit/overpass_road_limit_provider.dart';
 import '../../domain/entities/voice_alert.dart';
 import '../../domain/services/audio_announcement_coordinator.dart';
+import '../../domain/services/course_heading_estimator.dart';
 import '../../domain/services/speed_alert_engine.dart';
 import '../../domain/telemetry/road_matcher.dart';
 import '../../domain/telemetry/telemetry_dependencies.dart';
@@ -29,6 +30,7 @@ enum TelemetryDegradedReason {
   onlineDataDisabled,
   audioUnavailable,
   ttsUnavailable,
+  headingWeak,
   countryBoundaryUncertain,
 }
 
@@ -37,6 +39,7 @@ class TelemetryController extends ChangeNotifier {
     LocationDataSource? location,
     RoadLimitDataSource? roadLimit,
     SpeechEngine? speech,
+    HeadingDataSource? heading,
     DateTime Function()? clock,
     this.staleAfter = const Duration(seconds: 3),
     this.limitExpiryAfter = const Duration(seconds: 10),
@@ -44,20 +47,24 @@ class TelemetryController extends ChangeNotifier {
   })  : _location = location ?? GeolocatorLocationDataSource(),
         _roadLimit = roadLimit ?? OverpassRoadLimitProvider(),
         _speech = speech ?? FlutterTtsSpeechEngine(),
+        _heading = heading,
         _clock = clock ?? DateTime.now;
 
   final LocationDataSource _location;
   final RoadLimitDataSource _roadLimit;
   final SpeechEngine _speech;
+  final HeadingDataSource? _heading;
   final DateTime Function() _clock;
   final Duration staleAfter;
   final Duration limitExpiryAfter;
   final Duration staleCheckInterval;
   final _alerts = SpeedAlertEngine();
   final _audio = AudioAnnouncementCoordinator();
+  final _courseHeading = CourseHeadingEstimator();
   final _matcher = RoadMatcher();
   final Set<TelemetryDegradedReason> degradationReasons = {};
   StreamSubscription<TelemetrySample>? _subscription;
+  StreamSubscription<HeadingSensorSample>? _headingSubscription;
   Timer? _staleTimer;
   TelemetrySample? _lastValidSample;
   TelemetrySample? _lastRoadLookup;
@@ -75,6 +82,7 @@ class TelemetryController extends ChangeNotifier {
   int? _customSpeedLimitKmh;
   bool _ttsReady = false;
   DateTime? _suppressRelativeAlertsUntil;
+  _RecentSensorHeading? _recentSensorHeading;
   final Set<int> _ignoredWayIds = {};
 
   TrackingStatus status = TrackingStatus.stopped;
@@ -150,6 +158,23 @@ class TelemetryController extends ChangeNotifier {
         notifyListeners();
       },
     );
+    final headingDataSource = _heading;
+    if (allowOnline && headingDataSource != null) {
+      try {
+        if (await headingDataSource.isAvailable()) {
+          _headingSubscription = headingDataSource.samples.listen(
+            (heading) {
+              if (session == _session) {
+                _recentSensorHeading = _RecentSensorHeading(heading, _clock());
+              }
+            },
+            onError: (_) {},
+          );
+        }
+      } catch (_) {
+        // O rumo GPS e o rumo por deslocamento continuam disponíveis.
+      }
+    }
     _staleTimer =
         Timer.periodic(staleCheckInterval, (_) => _updateStaleState());
     notifyListeners();
@@ -179,6 +204,7 @@ class TelemetryController extends ChangeNotifier {
       return;
     }
     _lastValidSample = sample;
+    if (_allowOnline) unawaited(_updateHeadingLocation(sample));
     degradationReasons.remove(TelemetryDegradedReason.locationStale);
     if (sample.horizontalAccuracy <= 15 && sample.speedAccuracy <= 1.5) {
       degradationReasons.remove(TelemetryDegradedReason.gpsWeak);
@@ -194,6 +220,14 @@ class TelemetryController extends ChangeNotifier {
     _maybeUpdateRoadLimit(sample);
     _maybeAnnounce(sample);
     notifyListeners();
+  }
+
+  Future<void> _updateHeadingLocation(TelemetrySample sample) async {
+    try {
+      await _heading?.updateLocation(sample);
+    } catch (_) {
+      // O rumo GPS e o rumo por deslocamento continuam disponíveis.
+    }
   }
 
   void _recordLocationLatency(TelemetrySample sample) {
@@ -279,15 +313,21 @@ class TelemetryController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (sample.horizontalAccuracy > 15 ||
-        sample.speedAccuracy > 1.5 ||
-        sample.heading == null ||
-        (sample.headingAccuracy ?? 999) > 20) {
-      degradationReasons.add(TelemetryDegradedReason.gpsWeak);
+    if (sample.horizontalAccuracy > 15 || sample.speedAccuracy > 1.5) {
+      degradationReasons
+        ..add(TelemetryDegradedReason.gpsWeak)
+        ..remove(TelemetryDegradedReason.headingWeak);
       return;
     }
+    final roadSample = _withBestHeading(sample);
+    if (roadSample.heading == null ||
+        (roadSample.headingAccuracy ?? 999) > 20) {
+      degradationReasons.add(TelemetryDegradedReason.headingWeak);
+      return;
+    }
+    degradationReasons.remove(TelemetryDegradedReason.headingWeak);
     if (!_shouldLookupRoad(sample)) {
-      _confirmRoad(sample, _cachedCandidates);
+      _confirmRoad(roadSample, _cachedCandidates);
       return;
     }
     _lastRoadLookup = sample;
@@ -298,13 +338,50 @@ class TelemetryController extends ChangeNotifier {
           latitude: sample.latitude, longitude: sample.longitude);
       if (session != _session || !_allowOnline || !hasFreshLocation) return;
       _cachedCandidates = candidates;
-      await _confirmRoad(sample, candidates);
+      await _confirmRoad(roadSample, candidates);
     } catch (_) {
       if (session == _session) {
         degradationReasons.add(TelemetryDegradedReason.overpassUnavailable);
         notifyListeners();
       }
     }
+  }
+
+  TelemetrySample _withBestHeading(TelemetrySample sample) {
+    final estimated = _courseHeading.estimate(sample, _sampleTime(sample));
+    var heading = sample.heading;
+    var accuracy = sample.headingAccuracy ?? double.infinity;
+    if (estimated != null && estimated.accuracyDegrees < accuracy) {
+      heading = estimated.degrees;
+      accuracy = estimated.accuracyDegrees;
+    }
+    final sensorHeading = _recentSensorHeading;
+    final sensorIsFresh = sensorHeading != null &&
+        _clock().difference(sensorHeading.receivedAt) <=
+            const Duration(seconds: 1);
+    final isLowSpeed = sample.speedMetersPerSecond * 3.6 <= 10;
+    if (accuracy > 20 &&
+        isLowSpeed &&
+        sensorIsFresh &&
+        sensorHeading.sample.accuracy >= 3) {
+      // O Android só informa níveis de calibração, não graus de incerteza.
+      // "Alta" é mapeada para 15 graus, ainda abaixo do limite do matcher.
+      heading = sensorHeading.sample.degrees;
+      accuracy = 15;
+    }
+    if (heading == sample.heading && accuracy == sample.headingAccuracy) {
+      return sample;
+    }
+    return TelemetrySample(
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      speedMetersPerSecond: sample.speedMetersPerSecond,
+      speedAccuracy: sample.speedAccuracy,
+      horizontalAccuracy: sample.horizontalAccuracy,
+      heading: heading,
+      headingAccuracy: accuracy.isFinite ? accuracy : null,
+      timestamp: sample.timestamp,
+    );
   }
 
   Future<void> _confirmRoad(
@@ -410,6 +487,8 @@ class TelemetryController extends ChangeNotifier {
     _session++;
     await _subscription?.cancel();
     _subscription = null;
+    await _headingSubscription?.cancel();
+    _headingSubscription = null;
     _staleTimer?.cancel();
     _staleTimer = null;
     await _audio.stop(_speech);
@@ -424,6 +503,8 @@ class TelemetryController extends ChangeNotifier {
     _lastValidSample = null;
     _lastRoadLookup = null;
     _pendingRoadLimitAnnouncement = null;
+    _courseHeading.reset();
+    _recentSensorHeading = null;
     lastLocationReceivedAt = null;
     lastLocationLatency = null;
     _ignoredWayIds.clear();
@@ -436,9 +517,17 @@ class TelemetryController extends ChangeNotifier {
   @override
   void dispose() {
     _subscription?.cancel();
+    _headingSubscription?.cancel();
     _staleTimer?.cancel();
     _roadLimit.dispose();
     _speech.stop();
     super.dispose();
   }
+}
+
+class _RecentSensorHeading {
+  const _RecentSensorHeading(this.sample, this.receivedAt);
+
+  final HeadingSensorSample sample;
+  final DateTime receivedAt;
 }

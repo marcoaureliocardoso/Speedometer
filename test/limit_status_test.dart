@@ -46,4 +46,24 @@ void main() {
     expect(find.textContaining('Via atual:'), findsNothing);
     expect(find.text('GPS com baixa precisão'), findsOneWidget);
   });
+
+  testWidgets('explica quando a direção não confirma a via', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LimitStatus(
+            isTracking: true,
+            roadSpeedLimit: null,
+            roadName: null,
+            degradationReasons: {TelemetryDegradedReason.headingWeak},
+            speedKmh: 50,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+        find.text('Direção insuficiente para confirmar a via'), findsOneWidget);
+    expect(find.text('GPS com baixa precisão'), findsNothing);
+  });
 }

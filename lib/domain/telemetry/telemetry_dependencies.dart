@@ -20,6 +20,13 @@ class TelemetrySample {
   final DateTime? timestamp;
 }
 
+class HeadingSensorSample {
+  const HeadingSensorSample({required this.degrees, required this.accuracy});
+
+  final double degrees;
+  final int accuracy;
+}
+
 class GeoPoint {
   const GeoPoint(this.latitude, this.longitude);
 
@@ -62,6 +69,14 @@ abstract interface class LocationDataSource {
   Future<void> openAppSettings();
   Future<void> openLocationSettings();
   Stream<TelemetrySample> get samples;
+}
+
+abstract interface class HeadingDataSource {
+  Stream<HeadingSensorSample> get samples;
+
+  Future<bool> isAvailable();
+
+  Future<void> updateLocation(TelemetrySample sample);
 }
 
 abstract interface class RoadLimitDataSource {

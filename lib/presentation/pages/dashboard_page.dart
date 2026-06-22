@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/preferences/app_preferences.dart';
 import '../../data/audio/flutter_tts_speech_engine.dart';
+import '../../data/heading/android_rotation_vector_heading_data_source.dart';
 import '../controllers/telemetry_controller.dart';
 import 'offline_regions_page.dart';
 import 'settings_page.dart';
@@ -16,7 +17,9 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  final _telemetry = TelemetryController();
+  final _telemetry = TelemetryController(
+    heading: AndroidRotationVectorHeadingDataSource(),
+  );
   final _preferences = AppPreferences();
   String? _dataMode;
   VoiceSettings _voiceSettings = const VoiceSettings();
@@ -607,6 +610,8 @@ class _DegradationSummary extends StatelessWidget {
                     'Áudio indisponível',
                   TelemetryDegradedReason.ttsUnavailable =>
                     'Voz pt-BR indisponível',
+                  TelemetryDegradedReason.headingWeak =>
+                    'Direção insuficiente para confirmar a via',
                   TelemetryDegradedReason.countryBoundaryUncertain =>
                     'Limite indisponível perto da fronteira',
                 })))

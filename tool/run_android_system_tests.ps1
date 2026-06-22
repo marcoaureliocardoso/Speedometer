@@ -23,6 +23,7 @@ function Run-Scenario([string]$testPath) {
 Install-TestApp
 Run-Scenario 'integration_test\voice_band_interval_test.dart'
 Run-Scenario 'integration_test\custom_speed_limit_test.dart'
+Run-Scenario 'integration_test\heading_sensor_test.dart'
 & $adb -s $Device shell pm revoke $package android.permission.ACCESS_FINE_LOCATION
 & $adb -s $Device shell pm revoke $package android.permission.ACCESS_COARSE_LOCATION
 & $adb -s $Device shell pm set-permission-flags $package android.permission.ACCESS_FINE_LOCATION user-set

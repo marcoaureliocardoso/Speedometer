@@ -344,6 +344,201 @@ void main() {
     await controller.stop();
   });
 
+  test('distingue direção imprecisa de GPS com baixa precisão', () async {
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(),
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    location.emit(TelemetrySample(
+      latitude: -23.5,
+      longitude: -46.6,
+      speedMetersPerSecond: 10,
+      speedAccuracy: 1,
+      horizontalAccuracy: 5,
+      heading: 90,
+      headingAccuracy: 30,
+      timestamp: DateTime.now(),
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.headingWeak));
+    expect(controller.degradationReasons,
+        isNot(contains(TelemetryDegradedReason.gpsWeak)));
+
+    location.emit(_validSample());
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.degradationReasons,
+        isNot(contains(TelemetryDegradedReason.headingWeak)));
+    await controller.stop();
+  });
+
+  test('estima a direção pelo deslocamento quando o rumo reportado é impreciso',
+      () async {
+    var now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: _FakeSpeech(),
+      clock: () => now,
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    location
+        .emit(_sampleWithImpreciseHeading(longitude: -46.6002, timestamp: now));
+    await Future<void>.delayed(Duration.zero);
+
+    now = now.add(const Duration(seconds: 2));
+    location
+        .emit(_sampleWithImpreciseHeading(longitude: -46.5999, timestamp: now));
+    await Future<void>.delayed(Duration.zero);
+
+    now = now.add(const Duration(seconds: 1));
+    location.emit(
+        _sampleWithImpreciseHeading(longitude: -46.59985, timestamp: now));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadSpeedLimit, 60);
+    expect(controller.degradationReasons,
+        isNot(contains(TelemetryDegradedReason.headingWeak)));
+    await controller.stop();
+  });
+
+  test('usa a orientação do sensor para confirmar a via em baixa velocidade',
+      () async {
+    var now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final heading = _FakeHeading();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: _FakeSpeech(),
+      heading: heading,
+      clock: () => now,
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    heading.emit(const HeadingSensorSample(degrees: 90, accuracy: 3));
+    await Future<void>.delayed(Duration.zero);
+    location.emit(_sampleWithImpreciseHeading(
+        longitude: -46.6, timestamp: now, speedMetersPerSecond: 2));
+    await Future<void>.delayed(Duration.zero);
+
+    now = now.add(const Duration(seconds: 1));
+    location.emit(_sampleWithImpreciseHeading(
+        longitude: -46.6, timestamp: now, speedMetersPerSecond: 2));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadSpeedLimit, 60);
+    expect(controller.degradationReasons,
+        isNot(contains(TelemetryDegradedReason.headingWeak)));
+    expect(heading.locationUpdates, hasLength(2));
+    await controller.stop();
+  });
+
+  test('rejeita sensor com calibração insuficiente em baixa velocidade',
+      () async {
+    final location = _FakeLocation();
+    final heading = _FakeHeading();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: _FakeSpeech(),
+      heading: heading,
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    heading.emit(const HeadingSensorSample(degrees: 90, accuracy: 2));
+    await Future<void>.delayed(Duration.zero);
+    location.emit(_sampleWithImpreciseHeading(
+        longitude: -46.6, timestamp: DateTime.now(), speedMetersPerSecond: 2));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.headingWeak));
+    await controller.stop();
+  });
+
+  test('rejeita sensor de orientação desatualizado', () async {
+    var now = DateTime(2026, 1, 1, 12);
+    final location = _FakeLocation();
+    final heading = _FakeHeading();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: _FakeSpeech(),
+      heading: heading,
+      clock: () => now,
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    heading.emit(const HeadingSensorSample(degrees: 90, accuracy: 3));
+    await Future<void>.delayed(Duration.zero);
+    now = now.add(const Duration(seconds: 2));
+    location.emit(_sampleWithImpreciseHeading(
+        longitude: -46.6, timestamp: now, speedMetersPerSecond: 2));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.headingWeak));
+    await controller.stop();
+  });
+
+  test('mantém rastreamento quando o sensor de orientação é indisponível',
+      () async {
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(),
+      speech: _FakeSpeech(),
+      heading: _FakeHeading(available: false),
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    location.emit(_validSample());
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.status, TrackingStatus.active);
+    await controller.stop();
+  });
+
+  test('não usa a orientação do sensor em velocidade de condução', () async {
+    final location = _FakeLocation();
+    final heading = _FakeHeading();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(limit: 60),
+      speech: _FakeSpeech(),
+      heading: heading,
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    heading.emit(const HeadingSensorSample(degrees: 90, accuracy: 3));
+    await Future<void>.delayed(Duration.zero);
+    location.emit(_sampleWithImpreciseHeading(
+        longitude: -46.6, timestamp: DateTime.now(), speedMetersPerSecond: 12));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.headingWeak));
+    await controller.stop();
+  });
+
   test('marca via não confirmada quando a consulta não encontra candidatos',
       () async {
     final location = _FakeLocation();
@@ -413,6 +608,22 @@ TelemetrySample _validSample({
       timestamp: timestamp ?? DateTime.now(),
     );
 
+TelemetrySample _sampleWithImpreciseHeading({
+  required double longitude,
+  required DateTime timestamp,
+  double speedMetersPerSecond = 10,
+}) =>
+    TelemetrySample(
+      latitude: -23.5,
+      longitude: longitude,
+      speedMetersPerSecond: speedMetersPerSecond,
+      speedAccuracy: 1,
+      horizontalAccuracy: 5,
+      heading: 90,
+      headingAccuracy: 30,
+      timestamp: timestamp,
+    );
+
 class _FakeLocation implements LocationDataSource {
   _FakeLocation({this.permission = LocationPermissionStatus.granted});
   final LocationPermissionStatus permission;
@@ -430,6 +641,27 @@ class _FakeLocation implements LocationDataSource {
   Future<void> openAppSettings() async {}
   @override
   Future<void> openLocationSettings() async {}
+}
+
+class _FakeHeading implements HeadingDataSource {
+  _FakeHeading({this.available = true});
+
+  final bool available;
+  final _controller = StreamController<HeadingSensorSample>.broadcast();
+  final locationUpdates = <TelemetrySample>[];
+
+  void emit(HeadingSensorSample sample) => _controller.add(sample);
+
+  @override
+  Stream<HeadingSensorSample> get samples => _controller.stream;
+
+  @override
+  Future<bool> isAvailable() async => available;
+
+  @override
+  Future<void> updateLocation(TelemetrySample sample) async {
+    locationUpdates.add(sample);
+  }
 }
 
 class _FakeRoadLimit implements RoadLimitDataSource {
