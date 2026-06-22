@@ -14,10 +14,14 @@ function Install-TestApp {
 }
 
 function Run-Scenario([string]$testPath) {
-    & $flutter test $testPath -d $Device --timeout 90s
+    & $flutter test $testPath -d $Device --timeout 90s --no-uninstall
+    if ($LASTEXITCODE -ne 0) {
+        throw "O cenário $testPath falhou com código $LASTEXITCODE."
+    }
 }
 
 Install-TestApp
+Run-Scenario 'integration_test\voice_band_interval_test.dart'
 & $adb -s $Device shell pm revoke $package android.permission.ACCESS_FINE_LOCATION
 & $adb -s $Device shell pm revoke $package android.permission.ACCESS_COARSE_LOCATION
 & $adb -s $Device shell pm set-permission-flags $package android.permission.ACCESS_FINE_LOCATION user-set

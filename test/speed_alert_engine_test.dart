@@ -51,19 +51,58 @@ void main() {
         '15 quilômetros por hora.');
   });
 
+  test('confirma faixa de 10 km/h quando configurada', () {
+    final engine = SpeedAlertEngine();
+    engine.process(
+        speedKmh: 14.9,
+        isValid: true,
+        roadSpeedLimit: null,
+        bandIntervalKmh: 10);
+    expect(
+        engine.process(
+            speedKmh: 15.1,
+            isValid: true,
+            roadSpeedLimit: null,
+            bandIntervalKmh: 10),
+        isNull);
+    expect(
+        engine.process(
+            speedKmh: 20.1,
+            isValid: true,
+            roadSpeedLimit: null,
+            bandIntervalKmh: 10),
+        isNull);
+    expect(
+        engine
+            .process(
+                speedKmh: 20.2,
+                isValid: true,
+                roadSpeedLimit: null,
+                bandIntervalKmh: 10)
+            ?.message,
+        '20 quilômetros por hora.');
+  });
+
   test('anuncia somente a faixa mais próxima em saltos e confirma descida', () {
     final engine = SpeedAlertEngine();
     engine.process(speedKmh: 14, isValid: true, roadSpeedLimit: null);
     expect(engine.process(speedKmh: 26, isValid: true, roadSpeedLimit: null),
         isNull);
-    expect(engine.process(speedKmh: 26.1, isValid: true, roadSpeedLimit: null)?.message,
+    expect(
+        engine
+            .process(speedKmh: 26.1, isValid: true, roadSpeedLimit: null)
+            ?.message,
         '25 quilômetros por hora.');
 
     final descending = SpeedAlertEngine();
     descending.process(speedKmh: 26, isValid: true, roadSpeedLimit: null);
-    expect(descending.process(speedKmh: 14, isValid: true, roadSpeedLimit: null),
+    expect(
+        descending.process(speedKmh: 14, isValid: true, roadSpeedLimit: null),
         isNull);
-    expect(descending.process(speedKmh: 13.9, isValid: true, roadSpeedLimit: null)?.message,
+    expect(
+        descending
+            .process(speedKmh: 13.9, isValid: true, roadSpeedLimit: null)
+            ?.message,
         '15 quilômetros por hora.');
   });
 
@@ -90,7 +129,8 @@ void main() {
     engine.process(speedKmh: 38, isValid: true, roadSpeedLimit: 40);
     engine.process(speedKmh: 38, isValid: true, roadSpeedLimit: 40);
     engine.process(speedKmh: 41, isValid: true, roadSpeedLimit: 40);
-    expect(engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40)?.kind,
+    expect(
+        engine.process(speedKmh: 42, isValid: true, roadSpeedLimit: 40)?.kind,
         VoiceAlertKind.aboveLimit);
   });
 }

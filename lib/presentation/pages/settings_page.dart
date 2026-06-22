@@ -15,18 +15,24 @@ class VoiceSettings {
     this.mode = VoiceMode.limitsOnly,
     this.volume = 1,
     this.speechRate = 1,
-  });
+    this.bandIntervalKmh = 5,
+  }) : assert(bandIntervalKmh == 5 || bandIntervalKmh == 10);
 
   final VoiceMode mode;
   final double volume;
   final double speechRate;
+  final int bandIntervalKmh;
 
   VoiceSettings copyWith(
-      {VoiceMode? mode, double? volume, double? speechRate}) {
+      {VoiceMode? mode,
+      double? volume,
+      double? speechRate,
+      int? bandIntervalKmh}) {
     return VoiceSettings(
       mode: mode ?? this.mode,
       volume: volume ?? this.volume,
       speechRate: speechRate ?? this.speechRate,
+      bandIntervalKmh: bandIntervalKmh ?? this.bandIntervalKmh,
     );
   }
 }
@@ -104,6 +110,39 @@ class _SettingsPageState extends State<SettingsPage> {
                       ],
                     ),
                   ),
+                  if (_settings.mode == VoiceMode.limitsAndBands) ...[
+                    const SizedBox(height: 16),
+                    Text('Intervalo da narração',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    const Text(
+                        'Escolha a frequência dos avisos de velocidade atual.'),
+                    RadioGroup<int>(
+                      groupValue: _settings.bandIntervalKmh,
+                      onChanged: (interval) {
+                        if (interval != null) {
+                          _update(
+                              _settings.copyWith(bandIntervalKmh: interval));
+                        }
+                      },
+                      child: Column(
+                        children: [
+                          RadioListTile<int>(
+                            contentPadding: EdgeInsets.zero,
+                            value: 5,
+                            selected: _settings.bandIntervalKmh == 5,
+                            title: Text('A cada 5 km/h'),
+                          ),
+                          RadioListTile<int>(
+                            contentPadding: EdgeInsets.zero,
+                            value: 10,
+                            selected: _settings.bandIntervalKmh == 10,
+                            title: Text('A cada 10 km/h'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   _SliderSetting(
                     label: 'Volume relativo',
@@ -137,9 +176,11 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Modo de dados', style: Theme.of(context).textTheme.titleMedium),
+                  Text('Modo de dados',
+                      style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  const Text('O modo online envia a posição atual diretamente ao Overpass/OSM para identificar a via.'),
+                  const Text(
+                      'O modo online envia a posição atual diretamente ao Overpass/OSM para identificar a via.'),
                   RadioGroup<String>(
                     groupValue: _dataMode,
                     onChanged: (value) {
@@ -149,8 +190,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       }
                     },
                     child: const Column(children: [
-                      RadioListTile<String>(value: 'Online e offline', title: Text('Online e offline')),
-                      RadioListTile<String>(value: 'Somente offline', title: Text('Somente offline')),
+                      RadioListTile<String>(
+                          value: 'Online e offline',
+                          title: Text('Online e offline')),
+                      RadioListTile<String>(
+                          value: 'Somente offline',
+                          title: Text('Somente offline')),
                     ]),
                   ),
                 ],

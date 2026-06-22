@@ -16,11 +16,13 @@ class SpeedAlertEngine {
     required double speedKmh,
     required bool isValid,
     required double? roadSpeedLimit,
+    int bandIntervalKmh = 5,
   }) {
     if (!isValid || speedKmh.isNegative) return null;
 
     _rearmRelativeAlerts(speedKmh, roadSpeedLimit);
-    final candidate = _candidate(speedKmh, roadSpeedLimit);
+    final candidate =
+        _candidate(speedKmh, roadSpeedLimit, bandIntervalKmh == 10 ? 10 : 5);
     final pending = _pending;
     if (pending != null) {
       if (pending.matches(speedKmh, roadSpeedLimit)) {
@@ -37,7 +39,7 @@ class SpeedAlertEngine {
     return null;
   }
 
-  _PendingAlert? _candidate(double speed, double? limit) {
+  _PendingAlert? _candidate(double speed, double? limit, int bandIntervalKmh) {
     final previous = _lastSpeed;
     if (limit != null && limit > 0) {
       if (speed < limit / 2 &&
@@ -56,13 +58,14 @@ class SpeedAlertEngine {
     final from = previous.floor();
     final to = speed.floor();
     if (to > from) {
-      final band = (to ~/ 5) * 5;
+      final band = (to ~/ bandIntervalKmh) * bandIntervalKmh;
       if (band > 0 && band > from && _ascendingBandArmed[band] != false) {
         return _PendingAlert.band(band, ascending: true);
       }
     }
     if (to < from) {
-      final band = ((to + 4) ~/ 5) * 5;
+      final band =
+          ((to + bandIntervalKmh - 1) ~/ bandIntervalKmh) * bandIntervalKmh;
       if (band > 0 && band < from && _descendingBandArmed[band] != false) {
         return _PendingAlert.band(band, ascending: false);
       }
@@ -91,12 +94,10 @@ class SpeedAlertEngine {
 
   void _rearmRelativeAlerts(double speed, double? limit) {
     if (limit == null || limit <= 0) return;
-    _belowHalfRearmReadings = speed >= limit / 2 + 2
-        ? _belowHalfRearmReadings + 1
-        : 0;
-    _aboveLimitRearmReadings = speed <= limit - 2
-        ? _aboveLimitRearmReadings + 1
-        : 0;
+    _belowHalfRearmReadings =
+        speed >= limit / 2 + 2 ? _belowHalfRearmReadings + 1 : 0;
+    _aboveLimitRearmReadings =
+        speed <= limit - 2 ? _aboveLimitRearmReadings + 1 : 0;
     if (_belowHalfRearmReadings >= 2) _belowHalfArmed = true;
     if (_aboveLimitRearmReadings >= 2) _aboveLimitArmed = true;
   }

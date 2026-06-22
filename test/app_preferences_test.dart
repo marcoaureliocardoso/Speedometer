@@ -11,6 +11,7 @@ void main() {
       voiceModeIndex: 2,
       volume: .65,
       speechRate: 1.2,
+      bandIntervalKmh: 10,
       dataMode: 'Online e offline',
     );
     final saved = await preferences.load();
@@ -18,6 +19,7 @@ void main() {
     expect(saved.voiceModeIndex, 2);
     expect(saved.volume, .65);
     expect(saved.speechRate, 1.2);
+    expect(saved.bandIntervalKmh, 10);
     expect(saved.dataMode, 'Online e offline');
   });
 }

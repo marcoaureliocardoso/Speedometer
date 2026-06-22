@@ -65,12 +65,13 @@ class TelemetryController extends ChangeNotifier {
   List<RoadSegment> _cachedCandidates = const [];
   DateTime? _pendingRoadSince;
   DateTime? _lastRoadLookupAt;
-  DateTime? _lastLimitAnnouncement;
+  RoadMatch? _pendingRoadLimitAnnouncement;
   double? _filteredSpeed;
   int _session = 0;
   bool _allowOnline = false;
   bool _announceLimits = true;
   bool _announceBands = false;
+  int _bandIntervalKmh = 5;
   bool _ttsReady = false;
   DateTime? _suppressRelativeAlertsUntil;
   final Set<int> _ignoredWayIds = {};
@@ -98,6 +99,7 @@ class TelemetryController extends ChangeNotifier {
     required bool allowOnline,
     required bool announceLimits,
     required bool announceBands,
+    int bandIntervalKmh = 5,
     double volume = 1,
     double speechRate = 1,
   }) async {
@@ -106,9 +108,12 @@ class TelemetryController extends ChangeNotifier {
     _allowOnline = allowOnline;
     _announceLimits = announceLimits;
     _announceBands = announceBands;
+    _bandIntervalKmh = bandIntervalKmh == 10 ? 10 : 5;
     _ttsReady = false;
     degradationReasons.clear();
-    if (!allowOnline) degradationReasons.add(TelemetryDegradedReason.onlineDataDisabled);
+    if (!allowOnline) {
+      degradationReasons.add(TelemetryDegradedReason.onlineDataDisabled);
+    }
     errorMessage = null;
     if (!await _location.isServiceEnabled()) {
       status = TrackingStatus.locationDisabled;
@@ -138,14 +143,24 @@ class TelemetryController extends ChangeNotifier {
         notifyListeners();
       },
     );
-    _staleTimer = Timer.periodic(staleCheckInterval, (_) => _updateStaleState());
+    _staleTimer =
+        Timer.periodic(staleCheckInterval, (_) => _updateStaleState());
     notifyListeners();
 
     final ttsAvailable =
         await _speech.configure(volume: volume, speechRate: speechRate);
-    if (session != _session) return;
+    if (session != _session) {
+      return;
+    }
     _ttsReady = ttsAvailable;
-    if (!ttsAvailable) degradationReasons.add(TelemetryDegradedReason.ttsUnavailable);
+    if (!ttsAvailable) {
+      degradationReasons.add(TelemetryDegradedReason.ttsUnavailable);
+    }
+    final pendingRoadLimit = _pendingRoadLimitAnnouncement;
+    if (ttsAvailable && pendingRoadLimit != null) {
+      _pendingRoadLimitAnnouncement = null;
+      unawaited(_announceRoadLimit(pendingRoadLimit));
+    }
     notifyListeners();
   }
 
@@ -197,8 +212,7 @@ class TelemetryController extends ChangeNotifier {
   void _updateStaleState() {
     if (!isTracking) return;
     final last = _lastValidSample;
-    if (last == null ||
-        _clock().difference(_sampleTime(last)) > staleAfter) {
+    if (last == null || _clock().difference(_sampleTime(last)) > staleAfter) {
       degradationReasons.add(TelemetryDegradedReason.locationStale);
     }
     if (last == null ||
@@ -211,11 +225,16 @@ class TelemetryController extends ChangeNotifier {
   }
 
   Future<void> _maybeAnnounce(TelemetrySample sample) async {
-    if (!_ttsReady || !hasFreshLocation || degradationReasons.contains(TelemetryDegradedReason.ttsUnavailable)) return;
+    if (!_ttsReady ||
+        !hasFreshLocation ||
+        degradationReasons.contains(TelemetryDegradedReason.ttsUnavailable)) {
+      return;
+    }
     final alert = _alerts.process(
       speedKmh: speedKmh ?? 0,
       isValid: sample.speedAccuracy <= 1.5,
       roadSpeedLimit: roadSpeedLimit?.toDouble(),
+      bandIntervalKmh: _bandIntervalKmh,
     );
     if (alert == null || _ignoredWayIds.contains(roadWayId)) {
       return;
@@ -226,7 +245,10 @@ class TelemetryController extends ChangeNotifier {
     }
     final shouldSpeak = switch (alert.kind) {
       VoiceAlertKind.speedBand => _announceBands,
-      VoiceAlertKind.belowHalfLimit || VoiceAlertKind.aboveLimit || VoiceAlertKind.roadLimitChanged => _announceLimits,
+      VoiceAlertKind.belowHalfLimit ||
+      VoiceAlertKind.aboveLimit ||
+      VoiceAlertKind.roadLimitChanged =>
+        _announceLimits,
     };
     if (!shouldSpeak) return;
     try {
@@ -245,8 +267,10 @@ class TelemetryController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (sample.horizontalAccuracy > 15 || sample.speedAccuracy > 1.5 ||
-        sample.heading == null || (sample.headingAccuracy ?? 999) > 20) {
+    if (sample.horizontalAccuracy > 15 ||
+        sample.speedAccuracy > 1.5 ||
+        sample.heading == null ||
+        (sample.headingAccuracy ?? 999) > 20) {
       degradationReasons.add(TelemetryDegradedReason.gpsWeak);
       return;
     }
@@ -258,7 +282,8 @@ class TelemetryController extends ChangeNotifier {
     _lastRoadLookupAt = _clock();
     final session = _session;
     try {
-      final candidates = await _roadLimit.fetchCandidates(latitude: sample.latitude, longitude: sample.longitude);
+      final candidates = await _roadLimit.fetchCandidates(
+          latitude: sample.latitude, longitude: sample.longitude);
       if (session != _session || !_allowOnline || !hasFreshLocation) return;
       _cachedCandidates = candidates;
       await _confirmRoad(sample, candidates);
@@ -270,8 +295,10 @@ class TelemetryController extends ChangeNotifier {
     }
   }
 
-  Future<void> _confirmRoad(TelemetrySample sample, List<RoadSegment> candidates) async {
-    final match = _matcher.select(sample: sample, candidates: candidates, previousWayId: roadWayId);
+  Future<void> _confirmRoad(
+      TelemetrySample sample, List<RoadSegment> candidates) async {
+    final match = _matcher.select(
+        sample: sample, candidates: candidates, previousWayId: roadWayId);
     if (match == null) {
       degradationReasons.add(TelemetryDegradedReason.roadMatchLowConfidence);
       return;
@@ -281,10 +308,13 @@ class TelemetryController extends ChangeNotifier {
       _pendingRoadSince = _sampleTime(sample);
       return;
     }
-    if (_sampleTime(sample).difference(_pendingRoadSince!).inSeconds < 1) return;
+    if (_sampleTime(sample).difference(_pendingRoadSince!).inSeconds < 1) {
+      return;
+    }
     _pendingRoad = null;
     _pendingRoadSince = null;
-    final changed = roadWayId != match.wayId || roadSpeedLimit != match.limit;
+    final roadOrLimitChanged =
+        roadWayId != match.wayId || roadSpeedLimit != match.limit;
     roadWayId = match.wayId;
     lastConfirmedWayId = match.wayId;
     roadSpeedLimit = match.limit;
@@ -292,21 +322,26 @@ class TelemetryController extends ChangeNotifier {
     degradationReasons
       ..remove(TelemetryDegradedReason.roadMatchLowConfidence)
       ..remove(TelemetryDegradedReason.overpassUnavailable);
-    if (changed) await _announceRoadLimit(match);
+    if (roadOrLimitChanged) await _announceRoadLimit(match);
     notifyListeners();
   }
 
   Future<void> _announceRoadLimit(RoadMatch match) async {
-    final last = _lastLimitAnnouncement;
-    if (!_ttsReady || !_announceLimits || degradationReasons.contains(TelemetryDegradedReason.ttsUnavailable) ||
-        (last != null && _clock().difference(last) < const Duration(seconds: 30))) {
+    if (!_announceLimits ||
+        degradationReasons.contains(TelemetryDegradedReason.ttsUnavailable)) {
       return;
     }
-    _lastLimitAnnouncement = _clock();
+    if (!_ttsReady) {
+      _pendingRoadLimitAnnouncement = match;
+      return;
+    }
     _suppressRelativeAlertsUntil = _clock().add(const Duration(seconds: 10));
     try {
       await _audio.announce(
-        VoiceAlert(kind: VoiceAlertKind.roadLimitChanged, message: 'Atenção: Novo limite de velocidade: ${match.limit} quilômetros por hora.'),
+        VoiceAlert(
+            kind: VoiceAlertKind.roadLimitChanged,
+            message:
+                'Atenção: Novo limite de velocidade: ${match.limit} quilômetros por hora.'),
         _speech,
       );
     } catch (_) {
@@ -326,22 +361,31 @@ class TelemetryController extends ChangeNotifier {
   double _approximateDistanceMeters(TelemetrySample one, TelemetrySample two) {
     const metersPerDegree = 111000.0;
     final latitude = (one.latitude - two.latitude) * metersPerDegree;
-    final longitude = (one.longitude - two.longitude) * metersPerDegree * math.cos(one.latitude * math.pi / 180);
+    final longitude = (one.longitude - two.longitude) *
+        metersPerDegree *
+        math.cos(one.latitude * math.pi / 180);
     return math.sqrt(latitude * latitude + longitude * longitude);
   }
 
   bool _isPlausiblyBrazilian(TelemetrySample sample) {
     // Restrição conservadora do protótipo: bloqueia consultas fora da extensão
     // territorial brasileira e perto das suas bordas aproximadas.
-    const minLatitude = -33.8, maxLatitude = 5.4, minLongitude = -74.1, maxLongitude = -34.7;
+    const minLatitude = -33.8,
+        maxLatitude = 5.4,
+        minLongitude = -74.1,
+        maxLongitude = -34.7;
     const margin = .005; // aproximadamente 500 m
-    final inside = sample.latitude > minLatitude && sample.latitude < maxLatitude &&
-        sample.longitude > minLongitude && sample.longitude < maxLongitude;
+    final inside = sample.latitude > minLatitude &&
+        sample.latitude < maxLatitude &&
+        sample.longitude > minLongitude &&
+        sample.longitude < maxLongitude;
     final nearEdge = (sample.latitude - minLatitude).abs() < margin ||
         (sample.latitude - maxLatitude).abs() < margin ||
         (sample.longitude - minLongitude).abs() < margin ||
         (sample.longitude - maxLongitude).abs() < margin;
-    if (nearEdge) degradationReasons.add(TelemetryDegradedReason.countryBoundaryUncertain);
+    if (nearEdge) {
+      degradationReasons.add(TelemetryDegradedReason.countryBoundaryUncertain);
+    }
     return inside && !nearEdge;
   }
 
@@ -367,6 +411,7 @@ class TelemetryController extends ChangeNotifier {
     _ttsReady = false;
     _lastValidSample = null;
     _lastRoadLookup = null;
+    _pendingRoadLimitAnnouncement = null;
     lastLocationReceivedAt = null;
     lastLocationLatency = null;
     _ignoredWayIds.clear();

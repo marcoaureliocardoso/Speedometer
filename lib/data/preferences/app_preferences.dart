@@ -4,6 +4,7 @@ class AppPreferences {
   static const _voiceModeKey = 'voice_mode';
   static const _volumeKey = 'voice_volume';
   static const _speechRateKey = 'voice_rate';
+  static const _bandIntervalKey = 'voice_band_interval_kmh';
   static const _dataModeKey = 'data_mode';
 
   Future<StoredSettings> load() async {
@@ -12,6 +13,7 @@ class AppPreferences {
       voiceModeIndex: preferences.getInt(_voiceModeKey) ?? 1,
       volume: preferences.getDouble(_volumeKey) ?? 1,
       speechRate: preferences.getDouble(_speechRateKey) ?? 1,
+      bandIntervalKmh: preferences.getInt(_bandIntervalKey) ?? 5,
       dataMode: preferences.getString(_dataModeKey),
     );
   }
@@ -20,12 +22,14 @@ class AppPreferences {
     required int voiceModeIndex,
     required double volume,
     required double speechRate,
+    int bandIntervalKmh = 5,
     required String? dataMode,
   }) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setInt(_voiceModeKey, voiceModeIndex);
     await preferences.setDouble(_volumeKey, volume);
     await preferences.setDouble(_speechRateKey, speechRate);
+    await preferences.setInt(_bandIntervalKey, bandIntervalKmh == 10 ? 10 : 5);
     if (dataMode == null) {
       await preferences.remove(_dataModeKey);
     } else {
@@ -39,11 +43,13 @@ class StoredSettings {
     required this.voiceModeIndex,
     required this.volume,
     required this.speechRate,
+    required this.bandIntervalKmh,
     required this.dataMode,
   });
 
   final int voiceModeIndex;
   final double volume;
   final double speechRate;
+  final int bandIntervalKmh;
   final String? dataMode;
 }

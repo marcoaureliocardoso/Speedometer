@@ -53,6 +53,12 @@ void main() {
     expect(find.text('Alertas de voz'), findsOneWidget);
     expect(find.text('Limites apenas'), findsOneWidget);
 
+    await tester.tap(find.text('Limites e faixas de 5 km/h'));
+    await tester.pumpAndSettle();
+    expect(find.text('Intervalo da narração'), findsOneWidget);
+    expect(find.text('A cada 5 km/h'), findsOneWidget);
+    expect(find.text('A cada 10 km/h'), findsOneWidget);
+
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Regiões offline'));

@@ -36,9 +36,11 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() {
       _dataMode = saved.dataMode;
       _voiceSettings = VoiceSettings(
-        mode: VoiceMode.values[saved.voiceModeIndex.clamp(0, VoiceMode.values.length - 1)],
+        mode: VoiceMode
+            .values[saved.voiceModeIndex.clamp(0, VoiceMode.values.length - 1)],
         volume: saved.volume,
         speechRate: saved.speechRate,
+        bandIntervalKmh: saved.bandIntervalKmh == 10 ? 10 : 5,
       );
     });
   }
@@ -47,6 +49,7 @@ class _DashboardPageState extends State<DashboardPage> {
         voiceModeIndex: _voiceSettings.mode.index,
         volume: _voiceSettings.volume,
         speechRate: _voiceSettings.speechRate,
+        bandIntervalKmh: _voiceSettings.bandIntervalKmh,
         dataMode: _dataMode,
       );
 
@@ -65,11 +68,12 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _startTracking() async {
     String? selectedMode = _dataMode;
     selectedMode ??= await showModalBottomSheet<String>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (context) => const _DataModeSheet(initialMode: 'Somente offline'),
-      );
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) =>
+          const _DataModeSheet(initialMode: 'Somente offline'),
+    );
 
     if (selectedMode != null && mounted) {
       setState(() => _dataMode = selectedMode);
@@ -80,6 +84,7 @@ class _DashboardPageState extends State<DashboardPage> {
         announceBands: _voiceSettings.mode == VoiceMode.limitsAndBands,
         volume: _voiceSettings.volume,
         speechRate: _voiceSettings.speechRate,
+        bandIntervalKmh: _voiceSettings.bandIntervalKmh,
       );
     }
   }
@@ -134,7 +139,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _playVoicePreview(VoiceSettings settings) async {
     if (settings.mode == VoiceMode.silent) return;
     final speech = FlutterTtsSpeechEngine();
-    if (await speech.configure(volume: settings.volume, speechRate: settings.speechRate)) {
+    if (await speech.configure(
+        volume: settings.volume, speechRate: settings.speechRate)) {
       await speech.speak('Exemplo de alerta de velocidade.');
     }
   }
@@ -170,15 +176,17 @@ class _DashboardPageState extends State<DashboardPage> {
                     onOfflineRegions: _openOfflineRegions,
                   ),
                   if (_telemetry.status == TrackingStatus.permissionDenied ||
-                      _telemetry.status == TrackingStatus.permissionDeniedForever ||
+                      _telemetry.status ==
+                          TrackingStatus.permissionDeniedForever ||
                       _telemetry.status == TrackingStatus.locationDisabled) ...[
                     const SizedBox(height: 8),
                     _TrackingAvailabilityNotice(
                       status: _telemetry.status,
                       onRetry: _startTracking,
-                      onOpenSettings: _telemetry.status == TrackingStatus.locationDisabled
-                          ? _telemetry.openLocationSettings
-                          : _telemetry.openAppSettings,
+                      onOpenSettings:
+                          _telemetry.status == TrackingStatus.locationDisabled
+                              ? _telemetry.openLocationSettings
+                              : _telemetry.openAppSettings,
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -269,11 +277,15 @@ class _TrackingAvailabilityNotice extends StatelessWidget {
               spacing: 8,
               children: [
                 if (!permanentlyDenied && !serviceDisabled)
-                  TextButton(onPressed: onRetry, child: const Text('Tentar novamente')),
+                  TextButton(
+                      onPressed: onRetry,
+                      child: const Text('Tentar novamente')),
                 if (permanentlyDenied || serviceDisabled)
                   TextButton(
                     onPressed: onOpenSettings,
-                    child: Text(serviceDisabled ? 'Abrir configurações de localização' : 'Abrir configurações do Android'),
+                    child: Text(serviceDisabled
+                        ? 'Abrir configurações de localização'
+                        : 'Abrir configurações do Android'),
                   ),
               ],
             ),
@@ -366,9 +378,12 @@ class _PortraitDashboard extends StatelessWidget {
     return SingleChildScrollView(
       child: Column(
         children: [
-          _SpeedReadout(isTracking: isTracking, status: status, speedKmh: speedKmh),
+          _SpeedReadout(
+              isTracking: isTracking, status: status, speedKmh: speedKmh),
           const SizedBox(height: 16),
-          SpeedometerGauge(speed: filteredNeedleSpeed, roadSpeedLimit: roadSpeedLimit?.toDouble()),
+          SpeedometerGauge(
+              speed: filteredNeedleSpeed,
+              roadSpeedLimit: roadSpeedLimit?.toDouble()),
           const SizedBox(height: 16),
           LimitStatus(
             isTracking: isTracking,
@@ -410,7 +425,8 @@ class _LandscapeDashboard extends StatelessWidget {
         Expanded(
           child: Column(
             children: [
-              _SpeedReadout(isTracking: isTracking, status: status, speedKmh: speedKmh),
+              _SpeedReadout(
+                  isTracking: isTracking, status: status, speedKmh: speedKmh),
               Expanded(
                 child: Center(
                   child: SpeedometerGauge(
@@ -446,7 +462,8 @@ class _LandscapeDashboard extends StatelessWidget {
 }
 
 class _SpeedReadout extends StatelessWidget {
-  const _SpeedReadout({required this.isTracking, required this.status, required this.speedKmh});
+  const _SpeedReadout(
+      {required this.isTracking, required this.status, required this.speedKmh});
 
   final bool isTracking;
   final TrackingStatus status;
@@ -536,7 +553,11 @@ class LimitStatus extends StatelessWidget {
                       ],
                       const SizedBox(height: 4),
                       if (isOverLimit)
-                        const Row(children: [Icon(Icons.warning_amber_rounded), SizedBox(width: 6), Text('Acima do limite')]),
+                        const Row(children: [
+                          Icon(Icons.warning_amber_rounded),
+                          SizedBox(width: 6),
+                          Text('Acima do limite')
+                        ]),
                       if (degradationReasons.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         _DegradationSummary(reasons: degradationReasons),
@@ -567,16 +588,26 @@ class _DegradationSummary extends StatelessWidget {
   Widget build(BuildContext context) => Wrap(
         spacing: 8,
         runSpacing: 6,
-        children: reasons.map((reason) => Chip(label: Text(switch (reason) {
-          TelemetryDegradedReason.gpsWeak => 'GPS com baixa precisão',
-          TelemetryDegradedReason.locationStale => 'Localização desatualizada',
-          TelemetryDegradedReason.roadMatchLowConfidence => 'Via não confirmada',
-          TelemetryDegradedReason.overpassUnavailable => 'Consulta online indisponível',
-          TelemetryDegradedReason.onlineDataDisabled => 'Modo somente offline',
-          TelemetryDegradedReason.audioUnavailable => 'Áudio indisponível',
-          TelemetryDegradedReason.ttsUnavailable => 'Voz pt-BR indisponível',
-          TelemetryDegradedReason.countryBoundaryUncertain => 'Limite indisponível perto da fronteira',
-        }))).toList(),
+        children: reasons
+            .map((reason) => Chip(
+                    label: Text(switch (reason) {
+                  TelemetryDegradedReason.gpsWeak => 'GPS com baixa precisão',
+                  TelemetryDegradedReason.locationStale =>
+                    'Localização desatualizada',
+                  TelemetryDegradedReason.roadMatchLowConfidence =>
+                    'Via não confirmada',
+                  TelemetryDegradedReason.overpassUnavailable =>
+                    'Consulta online indisponível',
+                  TelemetryDegradedReason.onlineDataDisabled =>
+                    'Modo somente offline',
+                  TelemetryDegradedReason.audioUnavailable =>
+                    'Áudio indisponível',
+                  TelemetryDegradedReason.ttsUnavailable =>
+                    'Voz pt-BR indisponível',
+                  TelemetryDegradedReason.countryBoundaryUncertain =>
+                    'Limite indisponível perto da fronteira',
+                })))
+            .toList(),
       );
 }
 
