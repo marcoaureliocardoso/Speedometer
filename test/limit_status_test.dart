@@ -36,7 +36,7 @@ void main() {
             isTracking: true,
             roadSpeedLimit: 60,
             roadName: '  ',
-            degradationReasons: {TelemetryDegradedReason.gpsWeak},
+            degradationReasons: {TelemetryDegradedReason.positionWeak},
             speedKmh: 50,
           ),
         ),
@@ -44,7 +44,7 @@ void main() {
     );
 
     expect(find.textContaining('Via atual:'), findsNothing);
-    expect(find.text('GPS com baixa precisão'), findsOneWidget);
+    expect(find.text('Posição GPS com baixa precisão'), findsOneWidget);
   });
 
   testWidgets('explica quando a direção não confirma a via', (tester) async {
@@ -64,6 +64,51 @@ void main() {
 
     expect(
         find.text('Direção insuficiente para confirmar a via'), findsOneWidget);
-    expect(find.text('GPS com baixa precisão'), findsNothing);
+    expect(find.text('Posição GPS com baixa precisão'), findsNothing);
+  });
+
+  testWidgets('mostra via atual mesmo sem limite', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LimitStatus(
+            isTracking: true,
+            roadSpeedLimit: null,
+            roadName: 'Rua sem limite',
+            degradationReasons: {},
+            speedKmh: 30,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Limite indisponível'), findsOneWidget);
+    expect(find.text('Via atual: Rua sem limite'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Limite indisponível. Via atual: Rua sem limite.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('distingue posição e velocidade imprecisas', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LimitStatus(
+            isTracking: true,
+            roadSpeedLimit: null,
+            roadName: null,
+            degradationReasons: {
+              TelemetryDegradedReason.positionWeak,
+              TelemetryDegradedReason.speedWeak,
+            },
+            speedKmh: 30,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Posição GPS com baixa precisão'), findsOneWidget);
+    expect(find.text('Velocidade GPS com baixa precisão'), findsOneWidget);
   });
 }

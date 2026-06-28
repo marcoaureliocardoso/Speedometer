@@ -527,12 +527,11 @@ class LimitStatus extends StatelessWidget {
     final limit = roadSpeedLimit;
     final hasRoadName = roadName?.trim().isNotEmpty == true;
     final isOverLimit = limit != null && (speedKmh ?? 0) > limit;
+    final roadSentence = hasRoadName ? ' Via atual: ${roadName!.trim()}.' : '';
     return Semantics(
       label: limit != null
-          ? 'Limite: $limit quilômetros por hora.${hasRoadName ? ' Via atual: ${roadName!.trim()}.' : ''}'
-          : isTracking
-              ? 'Limite indisponível. Aguardando uma posição válida.'
-              : 'Limite indisponível.',
+          ? 'Limite: $limit quilômetros por hora.$roadSentence'
+          : 'Limite indisponível.$roadSentence',
       child: ExcludeSemantics(
         child: Card(
           child: Padding(
@@ -597,7 +596,10 @@ class _DegradationSummary extends StatelessWidget {
         children: reasons
             .map((reason) => Chip(
                     label: Text(switch (reason) {
-                  TelemetryDegradedReason.gpsWeak => 'GPS com baixa precisão',
+                  TelemetryDegradedReason.positionWeak =>
+                    'Posição GPS com baixa precisão',
+                  TelemetryDegradedReason.speedWeak =>
+                    'Velocidade GPS com baixa precisão',
                   TelemetryDegradedReason.locationStale =>
                     'Localização desatualizada',
                   TelemetryDegradedReason.roadMatchLowConfidence =>
