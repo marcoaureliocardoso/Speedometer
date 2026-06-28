@@ -5,6 +5,7 @@
 .flutter-plugins-dependencies
 build/
 coverage/
+.worktrees/
 
 # Android Studio and IntelliJ
 *.iml
