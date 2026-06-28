@@ -55,7 +55,7 @@ class RoadMatch {
   });
 
   final int wayId;
-  final int limit;
+  final int? limit;
   final String? name;
   final double distanceMeters;
 }
