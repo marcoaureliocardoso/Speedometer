@@ -369,7 +369,7 @@ void main() {
     expect(controller.degradationReasons,
         contains(TelemetryDegradedReason.headingWeak));
     expect(controller.degradationReasons,
-        isNot(contains(TelemetryDegradedReason.gpsWeak)));
+        isNot(contains(TelemetryDegradedReason.positionWeak)));
 
     location.emit(_validSample());
     await Future<void>.delayed(Duration.zero);
@@ -444,8 +444,7 @@ void main() {
     await controller.stop();
   });
 
-  test('rejeita sensor com calibração insuficiente em baixa velocidade',
-      () async {
+  test('usa distância quando o sensor tem calibração insuficiente', () async {
     final location = _FakeLocation();
     final heading = _FakeHeading();
     final controller = TelemetryController(
@@ -465,11 +464,11 @@ void main() {
 
     expect(controller.roadSpeedLimit, isNull);
     expect(controller.degradationReasons,
-        contains(TelemetryDegradedReason.headingWeak));
+        isNot(contains(TelemetryDegradedReason.headingWeak)));
     await controller.stop();
   });
 
-  test('rejeita sensor de orientação desatualizado', () async {
+  test('usa distância quando a orientação está desatualizada', () async {
     var now = DateTime(2026, 1, 1, 12);
     final location = _FakeLocation();
     final heading = _FakeHeading();
@@ -492,7 +491,7 @@ void main() {
 
     expect(controller.roadSpeedLimit, isNull);
     expect(controller.degradationReasons,
-        contains(TelemetryDegradedReason.headingWeak));
+        isNot(contains(TelemetryDegradedReason.headingWeak)));
     await controller.stop();
   });
 
@@ -515,7 +514,7 @@ void main() {
     await controller.stop();
   });
 
-  test('não usa a orientação do sensor em velocidade de condução', () async {
+  test('usa distância sem sensor em velocidade de condução', () async {
     final location = _FakeLocation();
     final heading = _FakeHeading();
     final controller = TelemetryController(
@@ -535,7 +534,7 @@ void main() {
 
     expect(controller.roadSpeedLimit, isNull);
     expect(controller.degradationReasons,
-        contains(TelemetryDegradedReason.headingWeak));
+        isNot(contains(TelemetryDegradedReason.headingWeak)));
     await controller.stop();
   });
 
@@ -557,6 +556,35 @@ void main() {
     expect(controller.roadName, isNull);
     expect(controller.degradationReasons,
         contains(TelemetryDegradedReason.roadMatchLowConfidence));
+    await controller.stop();
+  });
+
+  test('confirma via sem limite e com velocidade imprecisa', () async {
+    final location = _FakeLocation();
+    final controller = TelemetryController(
+      location: location,
+      roadLimit: _FakeRoadLimit(name: 'Rua sem limite'),
+      speech: _FakeSpeech(),
+    );
+
+    await controller.start(
+        allowOnline: true, announceLimits: true, announceBands: false);
+    final now = DateTime.now();
+    location.emit(_validSample(timestamp: now, speedAccuracy: 4));
+    await Future<void>.delayed(Duration.zero);
+    location.emit(_validSample(
+      timestamp: now.add(const Duration(seconds: 2)),
+      longitude: -46.59999,
+      speedAccuracy: 4,
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.roadName, 'Rua sem limite');
+    expect(controller.roadSpeedLimit, isNull);
+    expect(controller.degradationReasons,
+        contains(TelemetryDegradedReason.speedWeak));
+    expect(controller.degradationReasons,
+        isNot(contains(TelemetryDegradedReason.positionWeak)));
     await controller.stop();
   });
 
@@ -596,12 +624,13 @@ TelemetrySample _validSample({
   double latitude = -23.5,
   double longitude = -46.6,
   double speedMetersPerSecond = 10,
+  double speedAccuracy = 1,
 }) =>
     TelemetrySample(
       latitude: latitude,
       longitude: longitude,
       speedMetersPerSecond: speedMetersPerSecond,
-      speedAccuracy: 1,
+      speedAccuracy: speedAccuracy,
       horizontalAccuracy: 5,
       heading: 90,
       headingAccuracy: 5,
@@ -665,19 +694,23 @@ class _FakeHeading implements HeadingDataSource {
 }
 
 class _FakeRoadLimit implements RoadLimitDataSource {
-  _FakeRoadLimit({this.limit});
+  _FakeRoadLimit({this.limit, this.name});
   final int? limit;
+  final String? name;
   int calls = 0;
   @override
   Future<List<RoadSegment>> fetchCandidates(
       {required double latitude, required double longitude}) async {
     calls++;
-    if (limit == null) return const [];
+    if (limit == null && name == null) return const [];
+    final tags = <String, String>{};
+    if (limit != null) tags['maxspeed'] = '$limit';
+    tags['name'] = name ?? 'Via de teste';
     return [
       RoadSegment(
         id: 1,
         points: const [GeoPoint(-23.5, -46.6002), GeoPoint(-23.5, -46.5998)],
-        tags: {'maxspeed': '$limit', 'name': 'Via de teste'},
+        tags: tags,
       ),
     ];
   }

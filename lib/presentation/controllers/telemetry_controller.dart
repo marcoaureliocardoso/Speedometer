@@ -23,7 +23,8 @@ enum TrackingStatus {
 }
 
 enum TelemetryDegradedReason {
-  gpsWeak,
+  positionWeak,
+  speedWeak,
   locationStale,
   roadMatchLowConfidence,
   overpassUnavailable,
@@ -154,7 +155,7 @@ class TelemetryController extends ChangeNotifier {
       },
       onError: (_) {
         errorMessage = 'Não foi possível receber a localização.';
-        degradationReasons.add(TelemetryDegradedReason.gpsWeak);
+        degradationReasons.add(TelemetryDegradedReason.positionWeak);
         notifyListeners();
       },
     );
@@ -199,17 +200,22 @@ class TelemetryController extends ChangeNotifier {
   void _onSample(TelemetrySample sample) {
     _recordLocationLatency(sample);
     if (!_isValid(sample)) {
-      degradationReasons.add(TelemetryDegradedReason.gpsWeak);
+      degradationReasons.add(TelemetryDegradedReason.positionWeak);
       notifyListeners();
       return;
     }
     _lastValidSample = sample;
     if (_allowOnline) unawaited(_updateHeadingLocation(sample));
     degradationReasons.remove(TelemetryDegradedReason.locationStale);
-    if (sample.horizontalAccuracy <= 15 && sample.speedAccuracy <= 1.5) {
-      degradationReasons.remove(TelemetryDegradedReason.gpsWeak);
+    if (sample.horizontalAccuracy <= 15) {
+      degradationReasons.remove(TelemetryDegradedReason.positionWeak);
     } else {
-      degradationReasons.add(TelemetryDegradedReason.gpsWeak);
+      degradationReasons.add(TelemetryDegradedReason.positionWeak);
+    }
+    if (sample.speedAccuracy <= 1.5) {
+      degradationReasons.remove(TelemetryDegradedReason.speedWeak);
+    } else {
+      degradationReasons.add(TelemetryDegradedReason.speedWeak);
     }
     speedKmh = math.max(0, sample.speedMetersPerSecond * 3.6);
     _filteredSpeed = _filteredSpeed == null
@@ -313,19 +319,11 @@ class TelemetryController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (sample.horizontalAccuracy > 15 || sample.speedAccuracy > 1.5) {
-      degradationReasons
-        ..add(TelemetryDegradedReason.gpsWeak)
-        ..remove(TelemetryDegradedReason.headingWeak);
+    if (sample.horizontalAccuracy > 15) {
+      degradationReasons.add(TelemetryDegradedReason.positionWeak);
       return;
     }
     final roadSample = _withBestHeading(sample);
-    if (roadSample.heading == null ||
-        (roadSample.headingAccuracy ?? 999) > 20) {
-      degradationReasons.add(TelemetryDegradedReason.headingWeak);
-      return;
-    }
-    degradationReasons.remove(TelemetryDegradedReason.headingWeak);
     if (!_shouldLookupRoad(sample)) {
       _confirmRoad(roadSample, _cachedCandidates);
       return;
@@ -389,7 +387,19 @@ class TelemetryController extends ChangeNotifier {
     final match = _matcher.select(
         sample: sample, candidates: candidates, previousWayId: roadWayId);
     if (match == null) {
-      degradationReasons.add(TelemetryDegradedReason.roadMatchLowConfidence);
+      _pendingRoad = null;
+      _pendingRoadSince = null;
+      final headingIsReliable =
+          sample.heading != null && (sample.headingAccuracy ?? 999) <= 20;
+      if (headingIsReliable) {
+        degradationReasons
+          ..add(TelemetryDegradedReason.roadMatchLowConfidence)
+          ..remove(TelemetryDegradedReason.headingWeak);
+      } else {
+        degradationReasons
+          ..add(TelemetryDegradedReason.headingWeak)
+          ..remove(TelemetryDegradedReason.roadMatchLowConfidence);
+      }
       return;
     }
     if (_pendingRoad?.wayId != match.wayId) {
@@ -410,12 +420,17 @@ class TelemetryController extends ChangeNotifier {
     roadName = match.name;
     degradationReasons
       ..remove(TelemetryDegradedReason.roadMatchLowConfidence)
+      ..remove(TelemetryDegradedReason.headingWeak)
       ..remove(TelemetryDegradedReason.overpassUnavailable);
-    if (roadOrLimitChanged) await _announceRoadLimit(match);
+    if (roadOrLimitChanged && match.limit != null) {
+      await _announceRoadLimit(match);
+    }
     notifyListeners();
   }
 
   Future<void> _announceRoadLimit(RoadMatch match) async {
+    final limit = match.limit;
+    if (limit == null) return;
     if (!_announceLimits ||
         degradationReasons.contains(TelemetryDegradedReason.ttsUnavailable)) {
       return;
@@ -430,7 +445,7 @@ class TelemetryController extends ChangeNotifier {
         VoiceAlert(
             kind: VoiceAlertKind.roadLimitChanged,
             message:
-                'Atenção: Novo limite de velocidade: ${match.limit} quilômetros por hora.'),
+                'Atenção: Novo limite de velocidade: $limit quilômetros por hora.'),
         _speech,
       );
     } catch (_) {
